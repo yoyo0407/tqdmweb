@@ -27,7 +27,7 @@ class RecordTests(unittest.TestCase):
             process.stdin.close.side_effect = BrokenPipeError('child exited')
             runner._process = process
             runner._finalize(process, reader, 'stable-record')
-            records.finish.assert_called_once_with('stable-record', 'exited', 0)
+            records.finish.assert_called_once_with('stable-record', 'exited', 0, None)
             self.assertEqual(runner.state, 'exited')
             self.assertEqual(runner.exit_code, 0)
 
@@ -70,15 +70,15 @@ class RecordTests(unittest.TestCase):
             release = Event()
             first = []
             original = runner._finalize
-            def delayed(process, reader, record_id):
+            def delayed(process, reader, record_id, output=None):
                 if record_id == first[0]:
                     release.wait(5)
-                original(process, reader, record_id)
+                original(process, reader, record_id, output)
             # start() sets record_id before constructing the waiter.
-            def wrapper(process, reader, record_id):
+            def wrapper(process, reader, record_id, output=None):
                 if not first:
                     first.append(record_id)
-                delayed(process, reader, record_id)
+                delayed(process, reader, record_id, output)
             runner._finalize = wrapper
             try:
                 runner.start(config)

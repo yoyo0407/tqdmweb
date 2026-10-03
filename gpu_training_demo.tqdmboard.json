@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "checkpoint_format": "qtqdm-training-v1",
+  "resume_argument": "--resume",
+  "model_shapes": {
+    "weight": [
+      1,
+      8
+    ],
+    "bias": [
+      1
+    ]
+  },
+  "strict_model": true
+}

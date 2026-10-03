@@ -1,12 +1,17 @@
 """Persistent run metadata and raw metric samples, using only SQLite."""
 
 import json
+import csv
+import io
 import os
 from pathlib import Path
 import sqlite3
+import tempfile
+import zipfile
 from threading import Lock
 from time import time
 from uuid import uuid4
+from .board_errors import failure_info
 
 
 def process_token(pid):
@@ -77,7 +82,7 @@ class RunRecords:
                     PRIMARY KEY (run_id, metric, update_id));
             """)
             columns = {row['name'] for row in self._db.execute('PRAGMA table_info(runs)')}
-            for name, kind in [('owner_pid', 'INTEGER'), ('owner_token', 'TEXT'), ('pid', 'INTEGER'), ('pid_token', 'TEXT')]:
+            for name, kind in [('owner_pid', 'INTEGER'), ('owner_token', 'TEXT'), ('pid', 'INTEGER'), ('pid_token', 'TEXT'), ('name', 'TEXT'), ('failure', 'TEXT')]:
                 if name not in columns:
                     self._db.execute(f'ALTER TABLE runs ADD COLUMN {name} {kind}')
 
@@ -135,15 +140,17 @@ class RunRecords:
         data['history_updates'] = row['cursor']
         return data
 
-    def finish(self, record_id, state, code):
+    def finish(self, record_id, state, code, failure=None):
         with self._lock, self._db:
-            self._db.execute("UPDATE runs SET ended=?,state=?,exit_code=? WHERE id=?",
-                             (time(), state, code, record_id))
+            self._db.execute("UPDATE runs SET ended=?,state=?,exit_code=?,failure=? WHERE id=?",
+                             (time(), state, code, json.dumps(failure) if failure else None, record_id))
 
     def training(self, record_id, data, page=None):
         with self._lock, self._db:
             self._db.execute('BEGIN IMMEDIATE')
             row = self._db.execute('SELECT training FROM runs WHERE id=?', (record_id,)).fetchone()
+            if row is None:
+                return
             previous = json.loads(row['training']) if row and row['training'] else {}
             older = data.get('completed', 0) < previous.get('completed', 0) or (
                 previous.get('control', {}).get('finished') and not data.get('control', {}).get('finished'))
@@ -157,7 +164,7 @@ class RunRecords:
 
     def list(self):
         with self._lock:
-            rows = self._db.execute("SELECT id,started,ended,state,exit_code,config,json_extract(training,'$.state') AS training_state FROM runs ORDER BY started DESC").fetchall()
+            rows = self._db.execute("SELECT id,name,started,ended,state,exit_code,config,json_extract(training,'$.state') AS training_state FROM runs ORDER BY started DESC").fetchall()
         return [{**dict(row), 'config': json.loads(row['config'])} for row in rows]
 
     def get(self, record_id):
@@ -166,6 +173,7 @@ class RunRecords:
         if row is None:
             raise ValueError('Run record not found')
         result = dict(row)
+        result['failure'] = json.loads(row['failure']) if row['failure'] else None
         result['config'] = json.loads(row['config'])
         data = json.loads(row['training']) if row['training'] else None
         if data:
@@ -183,7 +191,55 @@ class RunRecords:
             text, size, console_error = '', 0, str(error)
         result['console'] = {'text': text, 'version': size, 'trimmed_chars': max(0, size - 65536),
                              'path': row['log_path'], 'error': console_error}
+        result['failure'] = result['failure'] or failure_info(row['state'], row['exit_code'], result['console'], data)
         return result
+
+    def rename(self, record_id, name):
+        if not isinstance(name, str) or len(name.strip()) > 120:
+            raise ValueError('Record name must be at most 120 characters')
+        with self._lock, self._db:
+            cursor = self._db.execute('UPDATE runs SET name=? WHERE id=?', (name.strip() or None, record_id))
+            if cursor.rowcount != 1:
+                raise ValueError('Run record not found')
+
+    def delete(self, record_id):
+        with self._lock, self._db:
+            self._db.execute('BEGIN IMMEDIATE')
+            row = self._db.execute('SELECT state,ended FROM runs WHERE id=?', (record_id,)).fetchone()
+            if row is None:
+                raise ValueError('Run record not found')
+            if row['ended'] is None and row['state'] in ('running', 'detached'):
+                raise ValueError('Cannot delete a running or detached execution')
+            self._db.execute('DELETE FROM points WHERE run_id=?', (record_id,))
+            self._db.execute('DELETE FROM runs WHERE id=?', (record_id,))
+
+    def export(self, record_id):
+        """Return an open ZIP stream. The caller closes it after sending the download."""
+        record = self.get(record_id)
+        output = tempfile.TemporaryFile()
+        try:
+            with zipfile.ZipFile(output, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+                archive.writestr('record.json', json.dumps(record, ensure_ascii=False, indent=2))
+                with archive.open('metrics.csv', 'w') as binary:
+                    with io.TextIOWrapper(binary, encoding='utf-8', newline='') as text:
+                        writer = csv.writer(text)
+                        writer.writerow(['metric', 'elapsed', 'value', 'step', 'update_index'])
+                        cursor, target = 0, record['cursor']
+                        while cursor < target:
+                            page = self.history(record_id, cursor)
+                            for name, points in page['charts'].items():
+                                writer.writerows([name, *point] for point in points if point[3] <= target)
+                            cursor = page['next_update']
+                log = Path(record['log_path'])
+                if log.is_file():
+                    archive.write(log, 'console.log')
+                else:
+                    archive.writestr('console.log', record['console']['text'])
+            output.seek(0)
+            return output
+        except BaseException:
+            output.close()
+            raise
 
     def history(self, record_id, after=0):
         if after < 0:

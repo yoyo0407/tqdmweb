@@ -61,6 +61,13 @@
         <label>Python Script<input id="script" type="text" readonly required></label>
         <button id="choose-script" type="button">Choose Script...</button>
         <label>Arguments<input id="arguments" type="text" placeholder="--steps 20000 --learning-rate 0.0001"></label>
+        <label>Checkpoint (optional)<input id="checkpoint-path" type="text" readonly placeholder="Start a new run without a checkpoint"></label>
+        <div class="controls">
+          <button id="choose-checkpoint" type="button">Choose Checkpoint...</button>
+          <button id="inspect-checkpoint" type="button">Inspect Checkpoint</button>
+          <button id="clear-checkpoint" type="button">Clear Checkpoint</button>
+        </div>
+        <p id="checkpoint-status" class="hint" role="status"></p>
         <h2>Launch Settings</h2>
         <label>Python Executable<input id="python" type="text" list="environments" required form="launch-form"></label>
         <datalist id="environments"></datalist>
@@ -84,6 +91,12 @@
         <button id="force-stop" type="button" disabled>Force Stop</button>
       </div>
       <p id="process-details" class="hint"></p>
+      <section id="run-error" hidden>
+        <h2>Execution Error</h2>
+        <p data-error-summary role="status"></p>
+        <details><summary>Traceback</summary><pre data-error-traceback style="white-space: pre-wrap"></pre></details>
+        <p data-error-log class="hint"></p>
+      </section>
       <p id="monitor-empty" class="hint">Run a Qtqdm script to monitor training.</p>
       <section id="training-section" hidden>
         <h1 id="training-description">Progress</h1>
@@ -154,6 +167,7 @@
     </section>
     <section id="history-panel" role="tabpanel" aria-labelledby="tab-history" hidden>
       <h2>Run History</h2>
+      <label>Search Records<input id="record-search" type="search" placeholder="Name, script, arguments or state"></label>
       <div class="controls">
         <select id="record-list" aria-label="Run History"><option value="">Select a run...</option></select>
         <button id="view-record" type="button">View Record</button>
@@ -168,8 +182,20 @@
         </nav>
         <section id="record-overview" role="tabpanel" aria-labelledby="tab-record-overview">
           <h2>Recorded Run · Read-only</h2>
+          <div class="controls">
+            <label>Name<input id="record-name" type="text" maxlength="120" placeholder="Optional run name"></label>
+            <button id="rename-record" type="button">Save Name</button>
+            <a id="export-record" href="#" download>Export ZIP</a>
+            <button id="delete-record" type="button">Delete Record</button>
+          </div>
           <pre id="record-config" class="hint" style="white-space: pre-wrap"></pre>
           <dl id="record-summary"></dl>
+          <section id="record-error" hidden>
+            <h2>Execution Error</h2>
+            <p data-error-summary role="status"></p>
+            <details><summary>Traceback</summary><pre data-error-traceback style="white-space: pre-wrap"></pre></details>
+            <p data-error-log class="hint"></p>
+          </section>
           <h2>Recorded Metrics</h2>
           <dl id="record-metrics"></dl>
         </section>
@@ -199,7 +225,8 @@
     <script src="/resources.js"></script>
     <script src="/charts.js"></script>
     <script src="/training_view.js"></script>
-    <script src="/board_history.js"></script>
+  <script src="/board_errors.js"></script>
+  <script src="/board_history.js"></script>
     <script src="/board.js"></script>
   </body>
 </html>

@@ -34,7 +34,7 @@ PowerShell 使用：
 
 | Tab | 內容 |
 | --- | --- |
-| Run | Script、Python Environment、Working Directory、Arguments、Run／Restart Process |
+| Run | Script、Python Environment、Working Directory、Arguments、Checkpoint、Run／Restart Process |
 | Monitor | Progress、Metrics、曲線、Pause／Resume／Stop、Save Checkpoint、Stop Process／Force Stop |
 | Console | 目前 process 的 stdout／stderr、Follow Tail、Copy Output、完整 Log Path |
 | History | Recorded Run · Read-only，內含 Overview／Charts／Console |
@@ -50,6 +50,10 @@ Tabs 只切換 DOM visibility，不做頁面 navigation、不重新建立 Monito
 兩張圖表各有 Smoothing：None (Raw)、EMA 0.6／0.9／0.99。EMA 的 weight 越大，曲線越平滑；公式為 `value = weight * previous + (1 - weight) * current`，首點使用原始值。只改顯示，不修改訓練、CSV 或儲存的數據。Overview 對其 downsampled points 計算 EMA；Full Metric History 對完整 points 計算，兩張圖的平滑曲線可能不同。
 
 ## Run History
+
+可用 Save Name 命名紀錄，Search Records 搜尋名稱、script、arguments 或狀態。Export ZIP 包含 `record.json`、完整 numeric samples 的 `metrics.csv` 與完整 `console.log`；不包含模型或 script 副本。Delete Record 刪除資料庫中的紀錄和曲線，保留原始 log 與 checkpoint。正在 running 或 detached 的紀錄不能刪除。
+
+Monitor 與 History 都提供 Error Summary、可展開的 Traceback 與 Full Log Path。沒有 Python traceback 的異常退出會顯示 exit code；Board 不再用錯誤彈窗打斷操作。History 保存結束時的錯誤資訊，重開 App 仍可查看。
 
 History 選擇一次執行後按 View Record。Overview 顯示當時 Python／script／arguments／working directory、時間、exit code、最後 metrics／checkpoint；Charts 顯示歷史曲線及自己的 axes／smoothing；Console 顯示該次執行的輸出。Refresh Records 更新清單及目前開啟紀錄的 Overview／metrics／Console／增量曲線，保留 Axes 與 Smoothing；再次 View Record 同一筆也保留設定。
 
@@ -75,7 +79,10 @@ Qtqdm-compatible script 的狀態由 Board 自己的 UI 顯示。App 設定 PYTH
 tqdmboard.cmd / tqdmboard.py
     └─ TqdmBoard (board.py): app HTTP server
          ├─ board.html / board.js: tabs + launcher + live training UI
-         ├─ board_history.js: independent read-only records UI
+         ├─ board_history.js: independent records UI / names / search / export / delete
+         ├─ board_errors.py / board_errors.js: error summary / traceback display
+         ├─ board_checkpoints.py: checkpoint manifest / preflight / resume arguments
+         │    └─ board_checkpoint_worker.py: isolated CPU inspection in selected Python
          ├─ training_view.js / charts.js: shared rendering behavior
          ├─ TrainingBridge (board_training.py): training state cache / controls
          ├─ RunRecords (board_records.py): SQLite run metadata / raw samples
@@ -104,6 +111,14 @@ App 顯示整台電腦的 CPU utilization、已用／總 RAM，以及 NVIDIA GPU
 
 ## Script 接入
 
+### Checkpoint 選檔與 Resume
+
+Run 的 Choose Checkpoint 使用 Windows 原生選檔視窗，選擇後自動 Inspect，顯示 Format、Resume Step、Target Steps 與 Learning Rate。Run／Restart Process 會再次檢查；檢查失敗不啟動新 process。Clear Checkpoint 恢復一般啟動。使用選檔功能時，Arguments 不要同時填 `--resume`；Board 會自行附加該參數。手動在 Arguments 填 `--resume` 仍可使用，但由 script 自己驗證，不會執行 Board preflight。
+
+此功能需要 script 旁的同名 `.tqdmboard.json` manifest，以及 script 實際提供的 `--resume` 載入接口。兩個 demo 已接入；不是任意 model 檔都能自動接續。Manifest 宣告格式與 model state keys／shapes，例如 `gpu_training_demo.tqdmboard.json`。目前支援 `qtqdm-training-v1` 與 `qtqdm-2048-v1`；新格式需擴充 inspection worker。
+
+Inspector 在所選 Python environment 的獨立 process 中使用 PyTorch `weights_only=True`、CPU 載入，不 import training script。檢查必要欄位、model keys／shapes、optimizer 基本結構、儲存步數與 target steps；2048 另檢查 replay buffer 與 board shape。所選環境必須有 PyTorch，檢查最多等待 30 秒。這是啟動前的結構檢查，實際載入 model／optimizer、device 與 RNG 仍由 training script 負責。
+
 基本使用 `with Qtqdm(items, desc="Training") as progress:`，再以 `set_postfix` 回報 metrics。需要 Save／Learning Rate 時，使用 `progress.register_controls(...)` 提供 handlers 與目前 learning rate；迴圈不必自己檢查請求。接口與範例詳見 `qtqdm/README.md`，GPU 範例已改用新接口。
 
 此次完成基本接入、統一控制接口與外部 resource monitoring；依目前決定，不加入 tqdm static converter。
@@ -121,3 +136,5 @@ Chart display regression test：安裝 Node.js／Playwright 並有 Edge 時，�
 Full Metric History 保留整個 run 的數值更新；追加 update 不裁掉早期 points。重新整理以 incremental history API 重建完整曲線。Board 保留收到的歷史，child process 結束後仍可查看；開始新 process 時才清空前一個 job。
 
 `node tests/board_records_ui_smoke.cjs` 驗證短程式的 3501 點 final flush、重開 App 的完整紀錄、回看期間 training steps 持續增加、Monitor chart settings 保留、過期 record response 隔離、tabs 不發送控制命令、EMA 不修改 raw data、重新整理、多分頁及最後分頁關閉後的 process／App 退出；另驗證已開啟 running record 的手動 Refresh、Axes／EMA 保留與自動 terminal state／Exit Code 更新。
+
+新增功能測試涵蓋 Checkpoint 格式／shape／步數拒絕、紀錄命名與 ZIP 全量匯出、刪除保留 log、拒絕刪除 active record，以及錯誤摘要與 traceback 持久化。Records browser test 另驗證搜尋、下載、刪除與 Monitor 錯誤顯示；`node tests/board_2048_smoke.cjs` 使用 RTX 5060 驗證 Checkpoint 選檔、Inspect、實際 Resume，以及損壞檔案不啟動新 process。

@@ -14,6 +14,8 @@ from urllib.request import Request, urlopen
 
 from .board_files import validate_launch
 from .console import ConsoleOutput
+from .board_checkpoints import prepare_launch
+from .board_errors import failure_info
 
 
 class ProcessRunner:
@@ -33,6 +35,7 @@ class ProcessRunner:
         self.error = None
         self.console = ConsoleOutput()
         self._reader_thread = None
+        self.failure = None
         self._waiters = []
         self._outputs = []
 
@@ -57,10 +60,10 @@ class ProcessRunner:
             process = subprocess.Popen(command, cwd=config["working_directory"], env=environment,
                                        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
-        except OSError:
+        except OSError as error:
             output.close()
             if self.records:
-                self.records.finish(record_id, "failed", None)
+                self.records.finish(record_id, "failed", None, {'summary': str(error), 'traceback': '', 'log_path': str(log_path)})
             raise
         self.job_id += 1
         if self.records:
@@ -73,16 +76,17 @@ class ProcessRunner:
         self.exit_code = None
         self.dashboard_url = None
         self.error = None
+        self.failure = None
         output.write(f"Command: {subprocess.list2cmdline(command)}\nWorking directory: {config['working_directory']}\n\n")
         self._reader_thread = Thread(target=self._watch, args=(process, output), daemon=True)
         self._reader_thread.start()
-        waiter = Thread(target=self._finalize, args=(process, self._reader_thread, record_id), daemon=True)
+        waiter = Thread(target=self._finalize, args=(process, self._reader_thread, record_id, output), daemon=True)
         self._waiters.append(waiter)
         self._outputs.append((self._reader_thread, output))
         waiter.start()
 
     def start(self, data):
-        config = validate_launch(data)
+        config = prepare_launch(validate_launch(data), data.get('checkpoint_path'))
         with self._lock:
             if self._closing:
                 raise ValueError("App is closing")
@@ -93,7 +97,7 @@ class ProcessRunner:
             self._start_locked(config)
 
     def restart(self, data):
-        config = validate_launch(data)
+        config = prepare_launch(validate_launch(data), data.get('checkpoint_path'))
         with self._lock:
             if self._closing or self._pending is not None:
                 raise ValueError("Restart is unavailable")
@@ -182,7 +186,7 @@ class ProcessRunner:
         process.stdout.close()
         output.close()
 
-    def _finalize(self, process, reader, record_id):
+    def _finalize(self, process, reader, record_id, output=None):
         # Process exit is independent of stdout EOF (a child may inherit the pipe).
         code = process.wait()
         reader.join(timeout=1)
@@ -190,13 +194,17 @@ class ProcessRunner:
             process.stdin.close()
         except (OSError, ValueError):
             pass  # A broken stdin must not prevent recording the process exit.
+        state = "exited" if code == 0 else "failed"
+        data = self.records.training_snapshot(record_id) if self.records else None
+        failure = failure_info(state, code, (output or self.console).snapshot(), data)
         if self.records:
-            self.records.finish(record_id, "exited" if code == 0 else "failed", code)
+            self.records.finish(record_id, state, code, failure)
         with self._lock:
             if self._process is not process:
                 return
             self.exit_code = code
-            self.state = "exited" if code == 0 else "failed"
+            self.state = state
+            self.failure = failure
             self.error = None
             if self._pending is not None and not self._closing:
                 config = self._pending
@@ -214,7 +222,7 @@ class ProcessRunner:
                     "pid": self._process.pid if self._process is not None else None,
                     "exit_code": self.exit_code, "restart_pending": self._pending is not None,
                     "dashboard_url": self.dashboard_url, "config": self.config,
-                    "error": self.error, "console": self.console.snapshot()}
+                    "error": self.error, "failure": self.failure, "console": self.console.snapshot()}
 
     def close(self):
         with self._lock:

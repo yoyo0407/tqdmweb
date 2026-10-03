@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "checkpoint_format": "qtqdm-2048-v1",
+  "resume_argument": "--resume",
+  "default_steps": 20000,
+  "default_buffer_size": 20000,
+  "model_shapes": {
+    "q_action.fc.0.weight": [
+      256,
+      16
+    ],
+    "q_action.fc.0.bias": [
+      256
+    ],
+    "q_action.fc.2.weight": [
+      256,
+      256
+    ],
+    "q_action.fc.2.bias": [
+      256
+    ],
+    "q_action.fc.4.weight": [
+      256,
+      256
+    ],
+    "q_action.fc.4.bias": [
+      256
+    ],
+    "q_action.fc.6.weight": [
+      4,
+      256
+    ],
+    "q_action.fc.6.bias": [
+      4
+    ],
+    "q_eval.fc.0.weight": [
+      256,
+      16
+    ],
+    "q_eval.fc.0.bias": [
+      256
+    ],
+    "q_eval.fc.2.weight": [
+      256,
+      256
+    ],
+    "q_eval.fc.2.bias": [
+      256
+    ],
+    "q_eval.fc.4.weight": [
+      256,
+      256
+    ],
+    "q_eval.fc.4.bias": [
+      256
+    ],
+    "q_eval.fc.6.weight": [
+      4,
+      256
+    ],
+    "q_eval.fc.6.bias": [
+      4
+    ]
+  },
+  "strict_model": true
+}

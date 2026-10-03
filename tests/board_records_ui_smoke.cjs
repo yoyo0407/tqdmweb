@@ -71,10 +71,26 @@ const config = arguments => ({script,python:path.join(root,'.venv','Scripts','py
   assert.deepStrictEqual(values.smooth.map(p=>p[1]),[0,4,2.4]);
   await smoothing.selectOption('0');
   assert((await page.locator('#record-chart-full .chart-caption').innerText()).includes('Raw data.'));
+  await page.locator('#tab-record-overview').click();
+  await page.locator('#record-name').fill('Experiment seed 42');
+  await page.locator('#rename-record').click();
+  await wait(async()=> (await page.locator(`#record-list option[value="${first.id}"]`).innerText()).includes('Experiment seed 42'));
+  await page.locator('#record-search').fill('Experiment seed 42');
+  assert.strictEqual(await page.locator('#record-list option').count(),2);
+  await page.locator('#record-search').fill('no-matching-experiment');
+  assert.strictEqual(await page.locator('#record-list option').count(),1);
+  await page.locator('#record-search').fill('');
+  const downloadPromise=page.waitForEvent('download');
+  await page.locator('#export-record').click();
+  const download=await downloadPromise;
+  await download.saveAs(path.join(folder,'export.zip'));
+  assert(fs.statSync(path.join(folder,'export.zip')).size>0);
   await post('run',config('--steps 100000 --delay 0.005'));
   await wait(async()=> (await (await fetch(url+'state')).json()).training.connected);
   const initialState = await (await fetch(url+'state')).json();
   const currentJob = initialState.job_id;
+  const protectedDelete=await fetch(url+'record-delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:initialState.record_id})});
+  assert.strictEqual(protectedDelete.status,400);
   const startStep = initialState.training.data.completed;
   const commands = [];
   page.on('request', r => {
@@ -155,6 +171,22 @@ const config = arguments => ({script,python:path.join(root,'.venv','Scripts','py
   await wait(async()=> (await page.locator('#record-summary').innerText()).includes('failed'));
   const forcedCode=await page.locator('#record-summary div').filter({has:page.locator('dt', {hasText:'Exit Code'})}).locator('dd').innerText();
   assert.strictEqual(forcedCode,String(forcedState.exit_code));
+  assert(await page.locator('#record-error').isVisible());
+  assert((await page.locator('#record-error [data-error-summary]').innerText()).includes('Process exited'));
+  const logPath=(await (await fetch(url+'record?id='+forcedId)).json()).log_path;
+  page.once('dialog',dialog=>dialog.accept());
+  await page.locator('#delete-record').click();
+  await wait(async()=> (await page.locator(`#record-list option[value="${forcedId}"]`).count())===0);
+  assert(fs.existsSync(logPath),'Deleting a record must preserve its original log');
+  const failingScript=path.join(folder,'fail.py');
+  fs.writeFileSync(failingScript,"raise RuntimeError('visible error-panel regression')\n");
+  await post('run',{...config(''),script:failingScript});
+  await wait(async()=> (await (await fetch(url+'state')).json()).state==='failed');
+  await page.locator('#tab-monitor').click();
+  await wait(async()=> (await page.locator('#run-error [data-error-summary]').innerText()).includes('visible error-panel regression'));
+  await page.locator('#run-error details > summary').click();
+  assert((await page.locator('#run-error [data-error-traceback]').innerText()).includes('RuntimeError'));
+  assert((await page.locator('#run-error [data-error-log]').innerText()).includes('.log'));
   // Start a fresh execution for the last-tab shutdown regression.
   await post('run',config('--steps 100000 --delay 0.005'));
   await wait(async()=> (await (await fetch(url+'state')).json()).training.connected);
@@ -177,7 +209,7 @@ const config = arguments => ({script,python:path.join(root,'.venv','Scripts','py
   assert.strictEqual(record.training.data.state,'stopped');
   assert(record.training.data.completed>0);
   assert.strictEqual(errors.length,0,errors.join('\n'));
-  console.log(JSON.stringify({result:'PASS',checks:['3501-point fast run final flush','app reopen persists full results and console','independent read-only archive while live steps keep increasing','live chart settings retained','out-of-order record selection','no commands from History or tab switching','manual refresh updates displayed results and preserves axes/EMA','running record automatically shows terminal state and exit 0','Force Stop shows actual failure code and labels last captured state','keyboard tab navigation','EMA and raw-data preservation','reload grace','multiple tabs','last-tab process and app shutdown']}));
+  console.log(JSON.stringify({result:'PASS',checks:['3501-point fast run final flush','app reopen persists full results and console','independent read-only archive while live steps keep increasing','live chart settings retained','out-of-order record selection','no commands from History or tab switching','manual refresh updates displayed results and preserves axes/EMA','running record automatically shows terminal state and exit 0','Force Stop shows actual failure code and labels last captured state','keyboard tab navigation','EMA and raw-data preservation','rename and search','ZIP export','delete preserves logs and blocks active runs','central error summary','reload grace','multiple tabs','last-tab process and app shutdown']}));
 } finally {
   if(url&&app?.exitCode===null){await post('shutdown',{}).catch(()=>{});await wait(()=>app.exitCode!==null);}
   if(browser)await browser.close();

@@ -3,6 +3,7 @@
 import argparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import shutil
 from pathlib import Path
 import sys
 from threading import Event, Thread
@@ -16,6 +17,9 @@ from .board_monitor import ResourceMonitor
 from .board_training import TrainingBridge
 from .board_records import RunRecords
 from .board_viewers import BoardViewers
+from .board_files import validate_launch
+from .board_checkpoints import inspect_checkpoint
+from .board_errors import failure_info
 
 
 class TqdmBoard:
@@ -38,6 +42,7 @@ class TqdmBoard:
         board = self
         assets = {"/": ("board.html", "text/html"), "/board.js": ("board.js", "text/javascript"),
                   "/board_history.js": ("board_history.js", "text/javascript"),
+                  "/board_errors.js": ("board_errors.js", "text/javascript"),
                   "/resources.js": ("resources.js", "text/javascript"),
                   "/console.js": ("console.js", "text/javascript"),
                   "/charts.js": ("charts.js", "text/javascript"),
@@ -71,8 +76,10 @@ class TqdmBoard:
                         self.respond(*files[route.path])
                     elif route.path == "/state":
                         process = board.runner.snapshot()
+                        training = board.training.snapshot(process)
+                        process['failure'] = process.get('failure') or failure_info(process['state'], process['exit_code'], process['console'], training['data'], process['error'])
                         self.respond_json({**process, "resources": board.monitor.snapshot(),
-                                           "training": board.training.snapshot(process)})
+                                           "training": training})
                     elif route.path == "/config":
                         config = board.runner.snapshot()["config"]
                         script = board.directory / "rl2048_demo.py"
@@ -85,6 +92,18 @@ class TqdmBoard:
                                                                       int(query.get("after", ["0"])[0])))
                     elif route.path == "/records":
                         self.respond_json(board.records.list())
+                    elif route.path == '/record-export':
+                        record_id = parse_qs(route.query).get('id', [''])[0]
+                        with board.records.export(record_id) as output:
+                            output.seek(0, 2)
+                            size = output.tell()
+                            output.seek(0)
+                            self.send_response(200)
+                            self.send_header('Content-Type', 'application/zip')
+                            self.send_header('Content-Disposition', f'attachment; filename="run-{record_id}.zip"')
+                            self.send_header('Content-Length', str(size))
+                            self.end_headers()
+                            shutil.copyfileobj(output, self.wfile)
                     elif route.path in ("/record", "/record-history"):
                         query = parse_qs(route.query)
                         record_id = query.get("id", [""])[0]
@@ -126,6 +145,14 @@ class TqdmBoard:
                         result, status = board.training.control(data)
                         self.respond_json(result, status)
                         return
+                    elif self.path == '/inspect-checkpoint':
+                        config = validate_launch(data)
+                        self.respond_json(inspect_checkpoint(config, data.get('checkpoint_path', '')))
+                        return
+                    elif self.path == '/record-rename':
+                        board.records.rename(data.get('id'), data.get('name'))
+                    elif self.path == '/record-delete':
+                        board.records.delete(data.get('id'))
                     elif self.path == "/run":
                         board.runner.start(data)
                     elif self.path == "/restart":

@@ -1,5 +1,5 @@
 // Shared rendering behavior; each page owns its markup and layout.
-function createTrainingView({prefix = "", send, settingsContainer = null, readHistory}) {
+function createTrainingView({prefix = "", send, settingsContainer = null, readHistory, notifyErrors = true}) {
   const byId = id => document.getElementById(prefix + id);
   const seconds = value => value == null ? "—" : `${Math.round(value)} s`;
   let generation = 0;
@@ -166,7 +166,7 @@ function createTrainingView({prefix = "", send, settingsContainer = null, readHi
     recentChart.update(fullHistories);
     loadHistory(data.history_updates || 0);
     if (historyError) recentChart.setStatus(`History temporarily unavailable: ${historyError}. Retrying...`);
-    if (data.state === "failed" && !errorShown && !archived) {
+    if (data.state === "failed" && !errorShown && !archived && notifyErrors) {
       errorShown = true;
       alert(data.error || "The task failed.");
     }

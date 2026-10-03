@@ -59,7 +59,12 @@ const state=async()=>{const r=await fetch(url+'state');return r.json();};
  await page.locator('#training-stop').click();await wait(async()=> (await state()).training.data.state==='stopped');
  const firstJob=(await state()).job_id;
  await page.locator('#tab-run').click();
- await page.locator('#arguments').fill(`--resume "${scheduledPath}" --steps ${scheduled+150} --step-delay 0.001`);
+ await page.locator('#arguments').fill(`--steps ${scheduled+150} --step-delay 0.001`);
+ await page.route('**/select-path', route=>route.fulfill({contentType:'application/json',body:JSON.stringify({path:scheduledPath})}));
+ await page.locator('#choose-checkpoint').click();
+ await wait(async()=> (await page.locator('#checkpoint-status').innerText()).includes(`Resume Step: ${scheduled}`));
+ assert((await page.locator('#checkpoint-status').innerText()).includes('Validated:'));
+ await page.unroute('**/select-path');
  await page.locator('#restart-process').click();
  await wait(async()=>{const b=await state();return b.job_id===firstJob+1&&b.training.data?.state==='finished';});
  const final=(await state()).training.data;
@@ -78,8 +83,24 @@ const state=async()=>{const r=await fetch(url+'state');return r.json();};
  assert(await page.locator('#stop-process').isDisabled());
  assert.strictEqual((await state()).training.data.completed,scheduled+150);
  assert.strictEqual(errors.length,0,errors.join('\n'));
- console.log(JSON.stringify({result:'PASS',gpu:'RTX 5060',control_lag_ms:lag,checkpoint_step:scheduled,final_step:final.completed,optimizer_updates:final.metrics.updates,loss:final.metrics.loss,best_tile:final.metrics.best_tile,features:['Board-owned UI','Pause/Resume','Learning Rate','Save','Schedule/Cancel','Chart Axes','Full history beyond 300 updates','Stop Training','Restart Process with Resume','Reload','Automatic process exit with code 0','Retained Final Data']}));
+
+ // A rejected checkpoint must not launch a new process or create an execution.
+ const finalJobId=(await state()).job_id;
+ const broken=path.join(root,'runs','invalid-checkpoint-test.pt');fs.writeFileSync(broken,'not a checkpoint');
+ await page.locator('#tab-run').click();
+ await page.locator('#arguments').fill('--steps 10000');
+ await page.route('**/select-path',route=>route.fulfill({contentType:'application/json',body:JSON.stringify({path:broken})}));
+ await page.locator('#choose-checkpoint').click();
+ await wait(async()=> (await page.locator('#checkpoint-status').innerText()).includes('Checkpoint rejected:'));
+ await page.locator('#run').click();
+ await wait(async()=> !(await page.locator('#run').isDisabled()));
+ assert.strictEqual((await state()).job_id,finalJobId);
+ assert.strictEqual((await state()).running,false);
+ await page.locator('#clear-checkpoint').click();
+ assert.strictEqual(await page.locator('#checkpoint-path').inputValue(),'');
+ await page.unroute('**/select-path');
  await page.locator('#quit').click();await wait(()=>app.exitCode!==null);assert.strictEqual(app.exitCode,0);
+ console.log(JSON.stringify({result:'PASS',gpu:'RTX 5060',control_lag_ms:lag,checkpoint_step:scheduled,final_step:final.completed,optimizer_updates:final.metrics.updates,loss:final.metrics.loss,best_tile:final.metrics.best_tile,features:['Board-owned UI','Pause/Resume','Learning Rate','Save','Schedule/Cancel','Chart Axes','Full history beyond 300 updates','Stop Training','Native checkpoint picker and preflight validation','Invalid checkpoint launch rejected','Restart Process with Resume','Reload','Automatic process exit with code 0','Retained Final Data']}));
 }finally{
  if(url&&app.exitCode===null){try{await fetch(url+'shutdown',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});}catch{}try{await wait(()=>app.exitCode!==null,10);}catch{}}
  if(browser)await browser.close();
