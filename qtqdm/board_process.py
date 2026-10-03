@@ -33,8 +33,12 @@ class ProcessRunner:
         self.error = None
         self.console = ConsoleOutput()
         self._reader_thread = None
+        self._waiters = []
+        self._outputs = []
 
     def _start_locked(self, config):
+        self._waiters = [waiter for waiter in self._waiters if waiter.is_alive()]
+        self._outputs = [(reader, output) for reader, output in self._outputs if reader.is_alive()]
         log_folder = self.project_root / "runs" / "tqdmboard"
         log_folder.mkdir(parents=True, exist_ok=True)
         log_path = log_folder / f"process_{datetime.now():%Y%m%d_%H%M%S_%f}.log"
@@ -59,6 +63,8 @@ class ProcessRunner:
                 self.records.finish(record_id, "failed", None)
             raise
         self.job_id += 1
+        if self.records:
+            self.records.attach_process(record_id, process.pid)
         self._process = process
         self.console = output
         self.config = config
@@ -70,6 +76,10 @@ class ProcessRunner:
         output.write(f"Command: {subprocess.list2cmdline(command)}\nWorking directory: {config['working_directory']}\n\n")
         self._reader_thread = Thread(target=self._watch, args=(process, output), daemon=True)
         self._reader_thread.start()
+        waiter = Thread(target=self._finalize, args=(process, self._reader_thread, record_id), daemon=True)
+        self._waiters.append(waiter)
+        self._outputs.append((self._reader_thread, output))
+        waiter.start()
 
     def start(self, data):
         config = validate_launch(data)
@@ -169,17 +179,24 @@ class ProcessRunner:
         remaining = decoder.decode(b"", final=True)
         if remaining:
             output.write(remaining)
-        code = process.wait()
         process.stdout.close()
-        process.stdin.close()
         output.close()
+
+    def _finalize(self, process, reader, record_id):
+        # Process exit is independent of stdout EOF (a child may inherit the pipe).
+        code = process.wait()
+        reader.join(timeout=1)
+        try:
+            process.stdin.close()
+        except (OSError, ValueError):
+            pass  # A broken stdin must not prevent recording the process exit.
+        if self.records:
+            self.records.finish(record_id, "exited" if code == 0 else "failed", code)
         with self._lock:
             if self._process is not process:
                 return
             self.exit_code = code
             self.state = "exited" if code == 0 else "failed"
-            if self.records:
-                self.records.finish(self.record_id, self.state, code)
             self.error = None
             if self._pending is not None and not self._closing:
                 config = self._pending
@@ -213,6 +230,9 @@ class ProcessRunner:
                     self.force_stop()
                     process.wait(timeout=3)
         finally:
-            if self._reader_thread is not None:
-                self._reader_thread.join(timeout=1)
+            # Every old execution owns a finalizer; finish all DB writes before close.
+            for waiter in self._waiters:
+                waiter.join()
+            for reader, output in self._outputs:
+                output.close()
             self.console.close()

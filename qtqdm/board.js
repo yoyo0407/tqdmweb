@@ -94,13 +94,16 @@ function renderRun(data) {
   consoleView.update(data.console);
   byId("current-script").textContent = `Current Script: ${data.config?.script || "—"}`;
   byId("process-status").textContent = `Process ${data.job_id}: ${data.state}` + (data.error ? ` | ${data.error}` : "");
-  byId("process-details").textContent = `PID: ${data.pid ?? "—"} | Exit code: ${data.exit_code ?? "—"}`;
+  const exitCode = data.exit_code ?? (data.running ? "Pending (process running)" : data.state === "idle" ? "Not started" : "Unknown (exit not recorded)");
+  byId("process-details").textContent = `PID: ${data.pid ?? "—"} | Exit code: ${exitCode}`;
   byId("training-section").hidden = !data.training.data;
   byId("training-settings").hidden = !data.training.data;
   byId("monitor-empty").hidden = !!data.training.data;
   trainingView.update(data.training.data, data.training.connected, data.training.history_error);
   if (data.training.data && data.running && !data.training.connected) {
     byId("training-state").textContent = "Training disconnected; showing last received state.";
+  } else if (data.training.data && !data.running && !data.training.data.control.finished) {
+    byId("training-state").textContent = `Last captured: ${data.training.data.state}; process ${data.state}.`;
   }
 }
 
@@ -151,7 +154,7 @@ window.addEventListener("pageshow", () => { viewerLeaving = false; viewerHeartbe
 document.addEventListener("visibilitychange", () => { if (!document.hidden) viewerHeartbeat(); });
 viewerHeartbeat();
 setInterval(viewerHeartbeat, 1000);
-setInterval(recordView.refreshRecords, 5000);
+setInterval(recordView.refreshRecords, 2000);
 
 async function refresh() {
   try {

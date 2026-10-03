@@ -16,7 +16,7 @@ with Qtqdm(range(a.steps),open_browser=False) as progress:
         progress.set_postfix(score=i,loss=(i%3)*10)
         if a.delay: time.sleep(a.delay)
 print('result='+progress.state,flush=True)
-progress.close()
+progress.wait()
 `);
 let app, url, browser, output = '';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -45,6 +45,8 @@ const config = arguments => ({script,python:path.join(root,'.venv','Scripts','py
   assert.strictEqual(record.training.data.completed,3501);
   assert.strictEqual(record.training.data.state,'finished');
   assert.strictEqual(record.training.data.history_updates,3501);
+  assert.strictEqual(record.exit_code,0);
+  await wait(async()=> (await (await fetch(url+'state')).json()).training.data?.state==='finished');
   await post('shutdown',{});await wait(()=>app.exitCode!==null);
   await start();await page.goto(url);
   await page.locator('#tab-history').click();
@@ -105,6 +107,18 @@ const config = arguments => ({script,python:path.join(root,'.venv','Scripts','py
   await wait(async()=> (await page.locator('#record-config').innerText()).includes('--steps 100000'));
   await sleep(1000);
   assert((await page.locator('#record-config').innerText()).includes('--steps 100000'));
+  // Refresh must reload the displayed run even if its process/training state is unchanged.
+  const completed = async()=> Number((await page.locator('#record-summary div').filter({has:page.locator('dt', {hasText:'Completed'})}).locator('dd').innerText()).split(' / ')[0]);
+  const captured=await completed();
+  await page.locator('#tab-record-charts').click();
+  await page.locator('#record-chart-full select[name=smoothing]').selectOption('0.9');
+  await page.locator('#record-chart-full input[name=xmin]').fill('0');
+  await page.locator('#record-chart-full button[type=submit]').click();
+  await wait(async()=> (await (await fetch(url+'state')).json()).training.data.completed>captured+25);
+  await page.locator('#refresh-records').click();
+  await wait(async()=> (await completed())>captured);
+  assert.strictEqual(await page.locator('#record-chart-full select[name=smoothing]').inputValue(),'0.9');
+  assert.strictEqual(await page.locator('#record-chart-full input[name=xmin]').inputValue(),'0');
   assert.strictEqual(commands.length,0,'History and tab switching must not issue training/process commands');
   await page.screenshot({path:path.join(folder,'tabs-history.png'),fullPage:true});
   await page.locator('#tab-monitor').click();
@@ -114,6 +128,36 @@ const config = arguments => ({script,python:path.join(root,'.venv','Scripts','py
   assert(!(await page.locator('#console-output').innerText()).includes('result=finished'));
   await page.locator('#tab-monitor').click();
   await page.screenshot({path:path.join(folder,'tabs-monitor.png'),fullPage:true});
+  // Once a displayed running process exits, its terminal state and exit code update automatically.
+  await page.locator('#tab-history').click();
+  await page.locator('#tab-record-overview').click();
+  await post('stop',{});
+  await wait(async()=> (await (await fetch(url+'state')).json()).state==='exited');
+  await wait(async()=> (await page.locator('#record-summary').innerText()).includes('exited'));
+  const code=await page.locator('#record-summary div').filter({has:page.locator('dt', {hasText:'Exit Code'})}).locator('dd').innerText();
+  assert.strictEqual(code,'0');
+  assert((await page.locator('#record-summary').innerText()).includes('stopped'));
+  // Force Stop has no final flush; distinguish the captured training state from process exit.
+  await post('run',config('--steps 100000 --delay 0.005'));
+  await wait(async()=> (await (await fetch(url+'state')).json()).training.connected);
+  const forcedId=(await (await fetch(url+'state')).json()).record_id;
+  await post('force-stop',{});
+  await wait(async()=> (await (await fetch(url+'state')).json()).state==='failed');
+  await page.locator('#tab-monitor').click();
+  await wait(async()=> (await page.locator('#training-state').innerText()).startsWith('Last captured:'));
+  const forcedState=await (await fetch(url+'state')).json();
+  assert.notStrictEqual(forcedState.exit_code,0);
+  await page.locator('#tab-history').click();
+  await page.locator('#refresh-records').click();
+  await wait(async()=> await page.locator(`#record-list option[value="${forcedId}"]`).count()===1);
+  await page.locator('#record-list').selectOption(forcedId);
+  await page.locator('#view-record').click();
+  await wait(async()=> (await page.locator('#record-summary').innerText()).includes('failed'));
+  const forcedCode=await page.locator('#record-summary div').filter({has:page.locator('dt', {hasText:'Exit Code'})}).locator('dd').innerText();
+  assert.strictEqual(forcedCode,String(forcedState.exit_code));
+  // Start a fresh execution for the last-tab shutdown regression.
+  await post('run',config('--steps 100000 --delay 0.005'));
+  await wait(async()=> (await (await fetch(url+'state')).json()).training.connected);
   // Keyboard navigation changes panels without navigating or sending commands.
   await page.locator('#tab-monitor').focus();await page.keyboard.press('ArrowRight');
   assert.strictEqual(await page.locator('#tab-console').getAttribute('aria-selected'),'true');
@@ -133,7 +177,7 @@ const config = arguments => ({script,python:path.join(root,'.venv','Scripts','py
   assert.strictEqual(record.training.data.state,'stopped');
   assert(record.training.data.completed>0);
   assert.strictEqual(errors.length,0,errors.join('\n'));
-  console.log(JSON.stringify({result:'PASS',checks:['3501-point fast run final flush','app reopen persists full results and console','independent read-only archive while live steps keep increasing','live chart settings retained','out-of-order record selection','no commands from History or tab switching','keyboard tab navigation','EMA and raw-data preservation','reload grace','multiple tabs','last-tab process and app shutdown']}));
+  console.log(JSON.stringify({result:'PASS',checks:['3501-point fast run final flush','app reopen persists full results and console','independent read-only archive while live steps keep increasing','live chart settings retained','out-of-order record selection','no commands from History or tab switching','manual refresh updates displayed results and preserves axes/EMA','running record automatically shows terminal state and exit 0','Force Stop shows actual failure code and labels last captured state','keyboard tab navigation','EMA and raw-data preservation','reload grace','multiple tabs','last-tab process and app shutdown']}));
 } finally {
   if(url&&app?.exitCode===null){await post('shutdown',{}).catch(()=>{});await wait(()=>app.exitCode!==null);}
   if(browser)await browser.close();

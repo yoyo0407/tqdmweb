@@ -102,6 +102,10 @@ class Qtqdm(Progress):
 
     def wait(self):
         """Keep a short script's dashboard open until Enter is pressed."""
+        if os.environ.get("TQDMBOARD") == "1":
+            # Board owns the result view and persistent history after process exit.
+            self.close()
+            return
         try:
             input("Press Enter to close the progress page...")
         except EOFError:

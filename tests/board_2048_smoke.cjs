@@ -73,10 +73,12 @@ const state=async()=>{const r=await fetch(url+'state');return r.json();};
  await page.reload();await wait(async()=> (await page.locator('#training-state').innerText())==='Completed');
  await page.locator('#full-history-section > summary').click();
  await page.screenshot({path:path.join(root,'runs','board-2048-preview.png'),fullPage:true});
- await page.locator('#stop-process').click();await wait(async()=> !(await state()).running);
+ await wait(async()=> !(await state()).running);
+ assert.strictEqual((await state()).exit_code,0);
+ assert(await page.locator('#stop-process').isDisabled());
  assert.strictEqual((await state()).training.data.completed,scheduled+150);
  assert.strictEqual(errors.length,0,errors.join('\n'));
- console.log(JSON.stringify({result:'PASS',gpu:'RTX 5060',control_lag_ms:lag,checkpoint_step:scheduled,final_step:final.completed,optimizer_updates:final.metrics.updates,loss:final.metrics.loss,best_tile:final.metrics.best_tile,features:['Board-owned UI','Pause/Resume','Learning Rate','Save','Schedule/Cancel','Chart Axes','Full history beyond 300 updates','Stop Training','Restart Process with Resume','Reload','Retained Final Data']}));
+ console.log(JSON.stringify({result:'PASS',gpu:'RTX 5060',control_lag_ms:lag,checkpoint_step:scheduled,final_step:final.completed,optimizer_updates:final.metrics.updates,loss:final.metrics.loss,best_tile:final.metrics.best_tile,features:['Board-owned UI','Pause/Resume','Learning Rate','Save','Schedule/Cancel','Chart Axes','Full history beyond 300 updates','Stop Training','Restart Process with Resume','Reload','Automatic process exit with code 0','Retained Final Data']}));
  await page.locator('#quit').click();await wait(()=>app.exitCode!==null);assert.strictEqual(app.exitCode,0);
 }finally{
  if(url&&app.exitCode===null){try{await fetch(url+'shutdown',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});}catch{}try{await wait(()=>app.exitCode!==null,10);}catch{}}

@@ -23,6 +23,7 @@ class TqdmBoard:
         self.project_root = Path(__file__).resolve().parent.parent
         self.directory = Path(directory or self.project_root).resolve(strict=True)
         self.records = RunRecords(records_path or self.project_root / "runs" / "tqdmboard" / "records.sqlite3")
+        self.records.recover()
         self.viewers = BoardViewers()
         self.runner = ProcessRunner(self.project_root, self.records)
         self.monitor = ResourceMonitor()

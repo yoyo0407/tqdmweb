@@ -22,6 +22,7 @@ class TrainingBridge:
         self._history = {}
         self._history_cursor = 0
         self._history_error = None
+        self._final_loaded = False
 
     def history_since(self, job_id, after=0):
         process = self.runner.snapshot()
@@ -53,6 +54,7 @@ class TrainingBridge:
                     self._history = {}
                     self._history_cursor = 0
                     self._history_error = None
+                    self._final_loaded = False
             if process["running"] and process["dashboard_url"]:
                 try:
                     with urlopen(process["dashboard_url"] + "state", timeout=1) as response:
@@ -94,6 +96,27 @@ class TrainingBridge:
                     with self._lock:
                         if self._job_id == job_id:
                             self._history_error = history_error
+            elif (not process['running'] and process.get('state') in ('exited', 'failed') and
+                  self.records and process.get('record_id') and not self._final_loaded):
+                # A short child can finish between polls; it flushed the final result to SQLite.
+                data = self.records.training_snapshot(process['record_id'])
+                while data is not None and self._history_cursor < data.get('history_updates', 0):
+                    page = self.records.history(process['record_id'], self._history_cursor)
+                    if self.runner.snapshot()['job_id'] != job_id:
+                        break
+                    with self._lock:
+                        for name, points in page['charts'].items():
+                            self._history.setdefault(name, []).extend(points)
+                        previous = self._history_cursor
+                        self._history_cursor = page['next_update']
+                    if self._history_cursor <= previous:
+                        break
+                if self.runner.snapshot()['job_id'] == job_id:
+                    with self._lock:
+                        if data is not None:
+                            self._data, self._sampled_at = data, time()
+                        self._error = self._history_error = None
+                        self._final_loaded = True
             self._closed.wait(0.25)
 
     def control(self, command):
