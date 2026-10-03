@@ -5,6 +5,8 @@
 | `index.html` | 顯示狀態與曲線，送出使用者指令 |
 | `charts.js` | 圖表設定、座標轉換、刻度與曲線繪製 |
 | `chart_history.py` | 每個數值指標的近期資料與總覽取樣 |
+| `console.py` | 鏡像 Python stdout／stderr、保存完整 log、限制網頁輸出長度 |
+| `console.js` | 更新 Console Output、Follow Tail 與 Copy Output |
 | `web.py` | 提供本機 HTTP 介面，驗證指令並交給控制層 |
 | `control.py` | 使用 Condition 協調網頁執行緒與訓練執行緒 |
 | `progress.py` | 計數、歷史取樣，每一步開始前檢查控制狀態 |
@@ -45,6 +47,16 @@ Python 主執行緒負責訓練，背景 `ThreadingHTTPServer` 負責網頁請�
 網頁執行緒只改控制狀態；optimizer 始終由訓練程式操作。HTTP 接受指令不代表訓練已經執行，因此 `/state` 分別提供暫停要求、已暫停、等待套用的 learning rate 與已生效值。
 
 Condition 讓暫停的訓練等待通知，不需要持續輪詢。`resume`、`stop` 或工作結束都會通知等待者。結束後拒絕新的控制指令；停止後不能接續同一個迭代器。
+
+## Console Output
+
+`Qtqdm` 進入 `with` 時，`ConsoleCapture` 暫時替換 `sys.stdout`／`sys.stderr`。`TeeStream.write()` 先寫原本的 stream，再複製到 `ConsoleOutput`，因此終端機原本輸出仍可看到。離開 `with` 或 `close()` 都恢復 stream。例外的 traceback 另寫入 console buffer，供失敗後的網頁查看。
+
+`ConsoleOutput` 以 Lock 保護最近 65,536 個字元與更新版本；`/state` 帶出 console snapshot，前端只在版本變更時更新文字。`console_path` 可指定新 `.log` 檔案，逐次寫入與 flush，內容不受 buffer 裁切影響。寫 log 發生 OSError 時停止寫檔並回報原因，網頁與原始終端機輸出仍繼續。
+
+同一個 process 同時只允許一個 console capture，其他 monitor 可設 `capture_console=False`。此功能捕捉 Python text stream，不攔截 subprocess／native code 的底層輸出，也不包含 `with` 前後的 print。瀏覽器是 plain text viewer：移除常見 ANSI CSI sequence，carriage return 顯示為換行，不模擬互動式 CMD。套件仍只依賴 Python 標準函式庫。
+
+顯示同步以 3 秒內為驗收門檻，仍採用每次請求完成後等待 250 ms 的輪詢，不加入訓練等待網頁的同步機制。驗證若觀察到超過 3 秒，再確認是否需要更嚴格的同步控制。
 
 ## 保存與接續
 

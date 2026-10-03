@@ -6,16 +6,26 @@ from pathlib import Path
 from threading import Thread
 from time import monotonic
 import webbrowser
+import traceback as traceback_module
 
 from .progress import Progress
+from .console import ConsoleCapture, ConsoleOutput
 
 
 class Qtqdm(Progress):
-    def __init__(self, items, total=None, description="", open_browser=True, csv_path=None, initial=0):
+    def __init__(self, items, total=None, description="", open_browser=True, csv_path=None, initial=0,
+                 capture_console=True, console_path=None):
         super().__init__(items, total=total, description=description, csv_path=csv_path, initial=initial)
         self.open_browser = open_browser
         self.server = None
         self.url = None
+        self.console = ConsoleOutput(console_path)
+        self._console_capture = ConsoleCapture(self.console) if capture_console else None
+
+    def snapshot(self):
+        state = super().snapshot()
+        state["console"] = self.console.snapshot()
+        return state
 
     def _start_server(self):
         if self.server is not None:
@@ -24,6 +34,7 @@ class Qtqdm(Progress):
         progress = self
         page = Path(__file__).with_name("index.html").read_bytes()
         charts_script = Path(__file__).with_name("charts.js").read_bytes()
+        console_script = Path(__file__).with_name("console.js").read_bytes()
 
         class Handler(BaseHTTPRequestHandler):
             def respond(self, content, kind, status=200):
@@ -42,6 +53,8 @@ class Qtqdm(Progress):
                     content, kind = page, "text/html; charset=utf-8"
                 elif self.path == "/charts.js":
                     content, kind = charts_script, "text/javascript; charset=utf-8"
+                elif self.path == "/console.js":
+                    content, kind = console_script, "text/javascript; charset=utf-8"
                 elif self.path == "/state":
                     content = json.dumps(progress.snapshot()).encode("utf-8")
                     kind = "application/json; charset=utf-8"
@@ -94,8 +107,15 @@ class Qtqdm(Progress):
         return super().__iter__()
 
     def __enter__(self):
-        if self._start_server() and self.open_browser:
-            webbrowser.open(self.url)
+        if self._console_capture is not None:
+            self._console_capture.start()
+        try:
+            if self._start_server() and self.open_browser:
+                webbrowser.open(self.url)
+        except BaseException:
+            if self._console_capture is not None:
+                self._console_capture.stop()
+            raise
         return self
 
     def show(self):
@@ -109,14 +129,21 @@ class Qtqdm(Progress):
         if error_type is not None:
             self.state = "failed"
             self.error = f"{error_type.__name__}: {error}"
+            self.console.write("".join(traceback_module.format_exception(error_type, error, traceback)))
         elif self.state == "running":
             self.state = "stopped"
         if self.started_at is not None:
             self.finished_at = monotonic()
         self._close_log()
+        if self._console_capture is not None:
+            self._console_capture.stop()
+        self.console.close()
         return False
 
     def close(self):
+        if self._console_capture is not None:
+            self._console_capture.stop()
+        self.console.close()
         self.control.finish()
         self._close_log()
         if self.server is not None:

@@ -32,6 +32,8 @@
     .axis-row select { width: 138px; }
     .chart-error { color: #b42318; font-size: 0.85rem; margin: 8px 0 0; }
     .chart-caption { overflow-wrap: anywhere; }
+    #console-output { max-height: 280px; min-height: 100px; overflow: auto; padding: 12px; border: 1px solid #b8c2cc; border-radius: 6px; font: 13px/1.5 monospace; white-space: pre; }
+    #console-status { overflow-wrap: anywhere; }
   </style>
 </head>
 <body>
@@ -39,21 +41,21 @@
   <div id="state">Waiting...</div>
   <progress id="bar"></progress>
   <div class="controls">
-    <button id="pause" type="button">暫停</button>
-    <button id="stop" type="button">提前停止</button>
-    <button id="save" type="button" hidden>儲存模型</button>
+    <button id="pause" type="button">Pause</button>
+    <button id="stop" type="button">Stop</button>
+    <button id="save" type="button" hidden>Save Checkpoint</button>
   </div>
   <form id="lr-form" class="controls" hidden>
     <label for="lr-input">Learning rate</label>
     <input id="lr-input" type="number" step="any" min="0" required>
-    <button id="lr-apply" type="submit">套用</button>
+    <button id="lr-apply" type="submit">Apply</button>
     <span id="lr-current" class="hint"></span>
   </form>
   <form id="save-form" class="controls" hidden>
-    <label for="save-step">完成第幾步後儲存</label>
+    <label for="save-step">Checkpoint Step</label>
     <input id="save-step" type="number" min="1" step="1" required>
-    <button id="save-schedule" type="submit">預訂儲存</button>
-    <button id="save-cancel" type="button" hidden>取消預訂</button>
+    <button id="save-schedule" type="submit">Schedule Checkpoint</button>
+    <button id="save-cancel" type="button" hidden>Cancel Schedule</button>
   </form>
   <p id="save-schedule-status" class="hint" role="status"></p>
   <p id="control-message" class="hint" role="status"></p>
@@ -65,18 +67,29 @@
     <div><dt>Elapsed</dt><dd id="elapsed">0 s</dd></div>
     <div><dt>Remaining</dt><dd id="remaining">—</dd></div>
   </dl>
+  <section id="console-section">
+    <h2>Console Output</h2>
+    <div class="controls">
+      <label><input id="console-follow" type="checkbox" checked> Follow Tail</label>
+      <button id="console-copy" type="button">Copy Output</button>
+      <span id="console-copy-status" class="hint" role="status"></span>
+    </div>
+    <pre id="console-output" role="log" aria-label="Python stdout and stderr" tabindex="0">Waiting for stdout / stderr...</pre>
+    <p id="console-status" class="hint"></p>
+  </section>
   <section id="metrics-section" hidden>
     <h2>Metrics</h2>
     <dl id="metrics"></dl>
   </section>
   <section id="loss-section" hidden>
-    <h2>全程曲線</h2>
+    <h2>Training History</h2>
     <div id="chart-overview"></div>
-    <h2>近期曲線</h2>
+    <h2>Recent History</h2>
     <div id="chart-recent"></div>
-    <p class="hint">上下限留空會自動縮放。切換 X 軸或 Y 指標會清除該軸的範圍；重新整理頁面會恢復預設。</p>
+    <p class="hint">Leave bounds empty for autoscaling. Switching an axis resets its bounds. Reloading restores defaults.</p>
   </section>
   <script src="/charts.js"></script>
+  <script src="/console.js"></script>
   <script>
     const byId = id => document.getElementById(id);
     const seconds = value => value == null ? "—" : `${Math.round(value)} s`;
@@ -88,6 +101,7 @@
     let pendingCommand = null;
     const overviewChart = createChart("chart-overview", "overview");
     const recentChart = createChart("chart-recent", "recent");
+    const consoleView = createConsoleView();
 
     function updateControls() {
       const ended = !connected || !controlState || controlState.finished || controlState.stop_requested;
@@ -102,7 +116,7 @@
       byId("save-schedule").disabled = ended || commandBusy;
       byId("save-cancel").hidden = controlState?.save_at_step == null;
       byId("save-cancel").disabled = ended || commandBusy;
-      byId("pause").textContent = controlState?.pause_requested ? "繼續" : "暫停";
+      byId("pause").textContent = controlState?.pause_requested ? "Resume" : "Pause";
     }
 
     async function sendControl(action, value) {
@@ -117,7 +131,7 @@
         const result = await response.json();
         if (!response.ok) throw new Error(result.error);
         pendingCommand = {action, value};
-        byId("control-message").textContent = "指令已送出，等待訓練迴圈處理。";
+        byId("control-message").textContent = "Command accepted; pending step boundary.";
       } catch (error) {
         byId("control-message").textContent = error.message;
       } finally {
@@ -134,19 +148,19 @@
       const step = Number(byId("save-step").value);
       if (!Number.isInteger(step) || step <= controlState.completed ||
           (controlState.total != null && step > controlState.total)) {
-        byId("control-message").textContent = "請選擇尚未完成、且不超過總目標的整數步數。";
+        byId("control-message").textContent = "Checkpoint step must be a future integer within the training target.";
         return;
       }
       sendControl("schedule_save", step);
     };
     byId("stop").onclick = () => {
-      if (confirm("確定提前停止？停止後無法繼續這次工作，已寫入的 CSV 會保留。")) sendControl("stop");
+      if (confirm("Stop this run? CSV records are retained. Resume training requires a new run.")) sendControl("stop");
     };
     byId("lr-form").onsubmit = event => {
       event.preventDefault();
       const value = Number(byId("lr-input").value);
       if (!Number.isFinite(value) || value <= 0) {
-        byId("control-message").textContent = "Learning rate 必須是大於零的有限數值。";
+        byId("control-message").textContent = "Learning rate must be finite and greater than zero.";
         return;
       }
       sendControl("learning_rate", value);
@@ -160,6 +174,7 @@
         const data = await response.json();
         connected = true;
         controlState = data.control;
+        consoleView.update(data.console);
         updateControls();
         if (pendingCommand) {
           const done = controlState.finished ||
@@ -170,13 +185,13 @@
             (pendingCommand.action === "schedule_save" && (controlState.save_at_step === pendingCommand.value || controlState.completed >= pendingCommand.value)) ||
             (pendingCommand.action === "cancel_save" && controlState.save_at_step == null);
           if (done) {
-            const messages = {pause: "已暫停。", resume: "已繼續。", stop: "已停止。", learning_rate: "Learning rate 已套用。", save: controlState.save_error ? "模型儲存失敗。" : "模型已儲存。", schedule_save: "儲存預訂已受理。", cancel_save: "已取消儲存預訂。"};
-            byId("control-message").textContent = pendingCommand.action === "save" ? messages.save : controlState.finished ? "工作已結束。" : messages[pendingCommand.action];
+            const messages = {pause: "Paused.", resume: "Resumed.", stop: "Stopped.", learning_rate: "Learning rate applied.", save: controlState.save_error ? "Checkpoint failed." : "Checkpoint saved.", schedule_save: "Checkpoint scheduled.", cancel_save: "Checkpoint schedule canceled."};
+            byId("control-message").textContent = pendingCommand.action === "save" ? messages.save : controlState.finished ? "Run ended." : messages[pendingCommand.action];
             pendingCommand = null;
           }
         }
         byId("description").textContent = data.description || "Progress";
-        const states = {waiting: "等待開始", running: "訓練中", pause_requested: "等待目前這一步完成後暫停", paused: "已暫停", saving: "正在儲存模型", stop_requested: "等待目前這一步完成後停止", stopped: "已停止", finished: "已完成", failed: "執行失敗"};
+        const states = {waiting: "Pending", running: "Running", pause_requested: "Pause pending", paused: "Paused", saving: "Saving checkpoint", stop_requested: "Stop pending", stopped: "Stopped", finished: "Completed", failed: "Failed"};
         byId("state").textContent = states[data.state] || data.state;
         // A loop only exposes LR controls after reporting its optimizer's value.
         byId("lr-form").hidden = data.control.learning_rate == null;
@@ -185,22 +200,22 @@
             byId("lr-input").value = data.control.learning_rate;
             rateInitialized = true;
           }
-          byId("lr-current").textContent = `目前：${data.control.learning_rate}` +
-            (data.control.pending_learning_rate == null ? "" : `；等待套用：${data.control.pending_learning_rate}`);
+          byId("lr-current").textContent = `Current: ${data.control.learning_rate}` +
+            (data.control.pending_learning_rate == null ? "" : `; Pending: ${data.control.pending_learning_rate}`);
         }
         byId("state").classList.toggle("failed", data.state === "failed");
-        byId("save-status").textContent = data.control.saving ? "正在寫入模型保存檔…" :
-          data.control.save_requested ? "已收到儲存要求，等待步驟邊界。" :
-          data.control.save_error ? `儲存失敗：${data.control.save_error}` :
-          data.control.last_checkpoint ? `已儲存：${data.control.last_checkpoint}` : "";
-        byId("save-schedule-status").textContent = data.control.save_at_step == null ? "" : `預訂於完成第 ${data.control.save_at_step} 步後儲存。`;
+        byId("save-status").textContent = data.control.saving ? "Writing checkpoint..." :
+          data.control.save_requested ? "Checkpoint pending step boundary." :
+          data.control.save_error ? `Checkpoint failed: ${data.control.save_error}` :
+          data.control.last_checkpoint ? `Checkpoint saved: ${data.control.last_checkpoint}` : "";
+        byId("save-schedule-status").textContent = data.control.save_at_step == null ? "" : `Checkpoint scheduled after step ${data.control.save_at_step}.`;
         byId("started").textContent = data.total == null
           ? `${data.started} / unknown`
           : `${data.started} / ${data.total}`;
         byId("completed").textContent = data.completed;
         byId("rate").textContent = data.rate ? `${data.rate.toFixed(1)} items/s` : "—";
         byId("elapsed").textContent = seconds(data.elapsed);
-        byId("remaining").textContent = data.state === "paused" ? "暫停中" : seconds(data.remaining);
+        byId("remaining").textContent = data.state === "paused" ? "Paused" : seconds(data.remaining);
         const bar = byId("bar");
         if (data.total == null) bar.removeAttribute("value");
         else { bar.max = Math.max(data.total, 1); bar.value = data.started; }

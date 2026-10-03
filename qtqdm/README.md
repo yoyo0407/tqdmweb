@@ -43,12 +43,12 @@ finally:
 
 ### 自訂座標軸
 
-兩張圖可各自設定，按「套用座標軸」生效：
+兩張圖可各自設定，按`Apply Axes`生效：
 
 - X 軸可選步數、經過秒數或更新次數，預設為步數。
 - Y 軸可選 `set_postfix()` 傳入的數值指標，例如 loss、accuracy、learning_rate；文字與非有限數值不列入選項。
 - X／Y 下限與上限可分別指定，留空則自動縮放。兩者都有填寫時，下限必須小於上限。
-- 切換 X 軸或 Y 指標會清除該軸的範圍；「恢復預設」清除所有範圍並選步數／loss。重新整理頁面也會恢復預設。
+- 切換 X 軸或 Y 指標會清除該軸的範圍；`Reset Axes`清除所有範圍並選步數／loss。重新整理頁面也會恢復預設。
 
 步數是記錄指標時正在處理的項目編號，接續訓練時沿用原步數。更新次數則是本次工作呼叫 `set_postfix()` 的次數，同一步可有多次更新。圖表範圍只影響顯示，CSV 和已保留的歷史資料不變。自訂 X 範圍時，Y 自動縮放會參考該範圍內的取樣點。
 
@@ -58,6 +58,7 @@ finally:
 - `csv_log.py`：逐次寫入完整指標紀錄。
 - `chart_history.py`：保留每個數值指標的曲線與總覽取樣。
 - `charts.js`：獨立管理兩張圖的座標軸設定與繪圖。
+- `console.py`／`console.js`：鏡像 Python stdout／stderr 與顯示 Console Output。
 - `control.py`：接收暫停、繼續、停止、learning rate 與保存要求，在迴圈邊界協調執行。
 - `web.py`：在 `127.0.0.1` 啟動本機 HTTP 伺服器，提供頁面與 `/state` JSON。
 - `index.html`：每 250 毫秒讀取 `/state` 並更新畫面。
@@ -84,9 +85,9 @@ progress.control.enable_saving(save_model)
 
 `write_training_checkpoint()` 是示意名稱，實際完整範例見 `gpu_training_demo.py`。保存函式在訓練執行緒執行，會暫時等待寫檔完成後才繼續下一步；網頁仍可操作。未登記保存函式時，頁面隱藏保存控制。
 
-- 「儲存模型」：在下一個步驟邊界保存；已暫停時直接保存並維持暫停。
-- 「預訂儲存」：輸入絕對步數，例如 200 表示完成第 200 步後保存一次；新預訂會取代舊預訂。
-- 「取消預訂」：取消尚未觸發的預訂，不能撤回已開始寫入的保存。
+- `Save Checkpoint`：在下一個步驟邊界保存；已暫停時直接保存並維持暫停。
+- `Schedule Checkpoint`：輸入絕對步數，例如 200 表示完成第 200 步後保存一次；新預訂會取代舊預訂。
+- `Cancel Schedule`：取消尚未觸發的預訂，不能撤回已開始寫入的保存。
 
 頁面顯示等待、寫入中、成功路徑或失敗原因。保存失敗後可重試；已完成、停止或失敗的工作不能再送出保存要求。GPU 範例每次手動與預訂保存使用新檔名，保留舊檔案。
 
@@ -109,6 +110,27 @@ with progress:
 暫停期間送出的 learning rate 會保持等待，繼續後由訓練端套用；多次要求以最後一次為準。完成、停止或失敗後，控制按鈕會停用。耗時與平均速度以實際經過的時間計算，包含暫停時間。
 
 目前每個 `Qtqdm` 物件各有一個頁面，每個物件只能執行一次迴圈；下一次工作請建立新物件。程式結束或呼叫 `close()` 後，頁面無法繼續更新。第一版尚未處理多進度條整合。
+
+## Console Output
+
+`with progress:` 內的 Python `print()`、寫入 `sys.stdout`／`sys.stderr` 的內容會同時出現在原本終端機與網頁。離開 `with` 會恢復原始 stream；如果發生例外，網頁也保留 traceback。
+
+```python
+progress = Qtqdm(range(100), console_path="training.log")
+try:
+    with progress:
+        print("Training started")
+        for step in progress:
+            print(f"Step {step + 1}")
+finally:
+    progress.wait()
+```
+
+`Follow Tail` 預設開啟，會自動捲動到最新輸出；關閉後可停在舊內容閱讀。`Copy Output` 複製目前可見的 buffer。網頁保留最近 65,536 個字元，超過時顯示提示；指定 `console_path` 可保存完整原始輸出，檔名必須是新檔案。GPU 範例自動建立 `.log`，與 CSV／checkpoint 使用相同時間前綴。
+
+Console Output 是 plain text viewer，捕捉 `with` 期間的 Python text stream；不包含外部程式或 native code 直接寫入終端機的內容，也不提供 CMD 指令執行。常見 ANSI 顏色控制碼會移除，carriage return 轉成換行。既有 logging handler 若已綁定舊 stream，不會自動改綁；可在 `with` 內建立 handler，或直接呼叫 `progress.console.write(text)`。
+
+同一個 process 僅允許一個啟用 capture 的 monitor。若有其他 monitor，請設 `capture_console=False`。顯示更新以 3 秒內為同步標準，正常連線時仍每 250 ms 輪詢；網頁關閉或斷線不會阻止訓練。
 
 ## 測試
 

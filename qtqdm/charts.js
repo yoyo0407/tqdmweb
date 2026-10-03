@@ -4,16 +4,16 @@ function createChart(containerId, historyKind) {
   container.innerHTML = `
     <form class="chart-settings">
       <div class="axis-row">
-        <label>X 軸 <select name="x"><option value="2">步數</option><option value="0">經過秒數</option><option value="3">更新次數</option></select></label>
-        <label>下限 <input name="xmin" type="number" step="any" placeholder="自動"></label>
-        <label>上限 <input name="xmax" type="number" step="any" placeholder="自動"></label>
+        <label>X Axis <select name="x"><option value="2">Step</option><option value="0">Elapsed Time</option><option value="3">Update Index</option></select></label>
+        <label>Min <input name="xmin" type="number" step="any" placeholder="Auto"></label>
+        <label>Max <input name="xmax" type="number" step="any" placeholder="Auto"></label>
       </div>
       <div class="axis-row">
-        <label>Y 軸 <select name="y" aria-label="Y 軸指標"></select></label>
-        <label>下限 <input name="ymin" type="number" step="any" placeholder="自動"></label>
-        <label>上限 <input name="ymax" type="number" step="any" placeholder="自動"></label>
+        <label>Y Axis <select name="y" aria-label="Y Metric"></select></label>
+        <label>Min <input name="ymin" type="number" step="any" placeholder="Auto"></label>
+        <label>Max <input name="ymax" type="number" step="any" placeholder="Auto"></label>
       </div>
-      <div class="axis-row"><button type="submit">套用座標軸</button><button type="button" class="chart-reset">恢復預設</button></div>
+      <div class="axis-row"><button type="submit">Apply Axes</button><button type="button" class="chart-reset">Reset Axes</button></div>
       <p class="chart-error" role="status"></p>
     </form>
     <canvas width="640" height="280" role="img"></canvas>
@@ -32,13 +32,13 @@ function createChart(containerId, historyKind) {
     for (const name of ["xmin", "xmax", "ymin", "ymax"]) {
       next[name] = field(name).value.trim() === "" ? null : Number(field(name).value);
       if (next[name] != null && !Number.isFinite(next[name])) {
-        error.textContent = "上下限必須是有限數值，或留空使用自動縮放。";
+        error.textContent = "Bounds must be finite numbers, or empty for autoscaling.";
         return;
       }
     }
     for (const axis of ["x", "y"]) {
       if (next[axis + "min"] != null && next[axis + "max"] != null && next[axis + "min"] >= next[axis + "max"]) {
-        error.textContent = `${axis.toUpperCase()} 軸下限必須小於上限。`;
+        error.textContent = `${axis.toUpperCase()} Axis Min must be less than Max.`;
         return;
       }
     }
@@ -85,9 +85,9 @@ function createChart(containerId, historyKind) {
     const ctx = canvas.getContext("2d");
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     const points = histories[settings.y]?.[historyKind] || [];
-    const xName = {0: "經過秒數 (s)", 2: "步數", 3: "更新次數"}[settings.x];
-    canvas.setAttribute("aria-label", `${settings.y || "指標"} 曲線，X 軸：${xName}`);
-    if (!points.length) { caption.textContent = "等待數值資料。"; return; }
+    const xName = {0: "Elapsed Time (s)", 2: "Step", 3: "Update Index"}[settings.x];
+    canvas.setAttribute("aria-label", `${settings.y || "Metric"} chart; X Axis: ${xName}`);
+    if (!points.length) { caption.textContent = "Waiting for numeric metrics."; return; }
 
     const [xmin, xmax] = bounds(points.map(p => p[settings.x]), settings.xmin, settings.xmax);
     const visible = points.filter(p => p[settings.x] >= xmin && p[settings.x] <= xmax);
@@ -134,8 +134,8 @@ function createChart(containerId, historyKind) {
     }
     ctx.restore();
     caption.textContent = `X：${numberLabel(xmin)} ～ ${numberLabel(xmax)}；Y：${numberLabel(ymin)} ～ ${numberLabel(ymax)}` +
-      (visible.length ? "" : "；此 X 範圍內沒有取樣點。") +
-      (historyKind === "overview" ? "　總覽保留取樣趨勢。" : "　最近 300 次此指標更新。");
+      (visible.length ? "" : "; No samples in this X range.") +
+      (historyKind === "overview" ? " | Downsampled training history." : " | Latest 300 metric updates.");
   }
 
   return {
