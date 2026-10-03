@@ -115,6 +115,8 @@
     const overviewChart = createChart("chart-overview", "overview");
     const recentChart = createChart("chart-recent", "recent");
     const consoleView = createConsoleView();
+    // tqdmboard already displays complete process stdout / stderr outside this iframe.
+    byId("console-section").hidden = window.self !== window.top;
     const restartControls = createRestartControls(sendControl);
     let lastRunId = null;
 
@@ -124,9 +126,9 @@
       byId("stop").disabled = ended || commandBusy;
       byId("lr-apply").disabled = ended || commandBusy;
       byId("lr-input").disabled = ended;
-      byId("save").hidden = !controlState?.saving_enabled;
+      byId("save").hidden = !controlState?.capabilities.save_checkpoint;
       byId("save").disabled = ended || commandBusy || controlState?.save_requested || controlState?.saving;
-      byId("save-form").hidden = !controlState?.saving_enabled;
+      byId("save-form").hidden = !controlState?.capabilities.save_checkpoint;
       byId("save-step").disabled = ended;
       byId("save-schedule").disabled = ended || commandBusy;
       byId("save-cancel").hidden = controlState?.save_at_step == null;
@@ -199,7 +201,7 @@
         }
         restartControls.update(data, connected, commandBusy);
         controlState = data.control;
-        consoleView.update(data.console);
+        if (!byId("console-section").hidden) consoleView.update(data.console);
         updateControls();
         if (pendingCommand) {
           const done = pendingCommand.action === "restart" ? (data.run_id !== pendingCommand.runId && !data.restart.pending) : controlState.finished ||
@@ -220,8 +222,7 @@
         byId("state").textContent = states[data.state] || data.state;
         const caps = {...data.control.capabilities, restart: Boolean(data.restart?.enabled)};
         byId("capabilities").textContent = Object.entries(caps).map(([name, enabled]) => `${name}: ${enabled ? "available" : "unavailable"}`).join(" | ");
-        // A loop only exposes LR controls after reporting its optimizer's value.
-        byId("lr-form").hidden = data.control.learning_rate == null;
+        byId("lr-form").hidden = !controlState.capabilities.learning_rate;
         if (data.control.learning_rate != null) {
           if (!rateInitialized) {
             byId("lr-input").value = data.control.learning_rate;

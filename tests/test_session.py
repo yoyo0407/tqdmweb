@@ -37,7 +37,6 @@ class SessionTests(unittest.TestCase):
 
         def train(current, parameters):
             progress = current.new_progress(range(parameters["target_steps"]), total=parameters["target_steps"])
-            progress.control.report_learning_rate(parameters["learning_rate"])
             runs.append(progress)
             with progress:
                 for step in progress:

@@ -99,7 +99,7 @@ def save_model():
     # 使用自己的保存邏輯，然後回傳檔案路徑
     return write_training_checkpoint()
 
-progress.control.enable_saving(save_model)
+progress.register_controls(save_checkpoint=save_model)
 ```
 
 `write_training_checkpoint()` 是示意名稱，實際完整範例見 `gpu_training_demo.py`。保存函式在訓練執行緒執行，會暫時等待寫檔完成後才繼續下一步；網頁仍可操作。未登記保存函式時，頁面隱藏保存控制。
@@ -143,29 +143,15 @@ Qtqdm 自動在 step boundary 呼叫 handler，並回報成功／失敗。已暫
 
 網頁列出 capabilities；未註冊的 Save／Learning Rate controls 不顯示，摘要標示 unavailable。Pause／Stop 是內建功能；Restart 由 `TrainingSession` 提供。Capabilities 表示 script 支援的功能，run 結束後按鈕仍會停用。Model、optimizer 與 checkpoint 內容仍由 script 決定，Qtqdm 不會自動猜測。
 
-### 舊的手動接入方式
-
-原本的 `enable_saving`、`report_learning_rate`、`take_learning_rate` 仍可用。手動接入 learning rate 時，先回報目前值，每一步取出要求、套用後再回報：
-
-```python
-progress.control.report_learning_rate(optimizer.param_groups[0]["lr"])
-with progress:
-    for batch in progress:
-        new_rate = progress.control.take_learning_rate()
-        if new_rate is not None:
-            for group in optimizer.param_groups:
-                group["lr"] = new_rate
-            progress.control.report_learning_rate(new_rate)
-        # 接著執行自己的訓練步驟
-```
-
-使用舊的手動模式時，暫停期間的 learning rate 會等待繼續後由 script 套用；使用新的 handler 模式時，暫停期間即可套用。尚未開始處理的多次 learning-rate 要求以最後一次為準。完成、停止或失敗後，控制按鈕會停用。耗時與平均速度以實際經過的時間計算，包含暫停時間。
+控制接入統一使用 `register_controls`。如果自己的舊 script 使用 `enable_saving`、`report_learning_rate` 或 `take_learning_rate`，請改成上述 handler 寫法；這三個舊接口已移除。尚未開始處理的多次 learning-rate 要求以最後一次為準。完成、停止或失敗後，控制按鈕會停用。耗時與平均速度以實際經過的時間計算，包含暫停時間。
 
 目前每個 `Qtqdm` 物件各有一個頁面，每個物件只能執行一次迴圈；下一次工作請建立新物件。程式結束或呼叫 `close()` 後，頁面無法繼續更新。第一版尚未處理多進度條整合。
 
 ## Console Output
 
 `with progress:` 內的 Python `print()`、寫入 `sys.stdout`／`sys.stderr` 的內容會同時出現在原本終端機與網頁。離開 `with` 會恢復原始 stream；如果發生例外，網頁也保留 traceback。
+
+在 tqdmboard 的 iframe 中，Dashboard 隱藏重複的 Console Output，使用 App 的 Process Console。獨立開啟 Dashboard 時仍顯示 Console Output；Python capture 與 log 保存照常執行。
 
 ```python
 progress = Qtqdm(range(100), console_path="training.log")

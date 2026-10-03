@@ -64,19 +64,12 @@ class TrainingControl:
             elif action == "cancel_save":
                 self._save_at_step = None
             else:
-                if self._learning_rate is None:
+                if self._rate_handler is None:
                     raise ValueError("This training loop has not enabled learning-rate control")
                 self._pending_learning_rate = value
                 self._rate_error = None
             self._condition.notify_all()
             return True
-
-    def enable_saving(self, handler):
-        """Register the training code's save function, returning a file path."""
-        if not callable(handler):
-            raise TypeError("Save handler must be callable")
-        with self._condition:
-            self._save_handler = handler
 
     def register_controls(self, *, save_checkpoint=None, set_learning_rate=None, learning_rate=None):
         """Register callbacks before iteration; each runs on the training thread."""
@@ -114,7 +107,7 @@ class TrainingControl:
                 if self._save_at_step is not None and self._completed >= self._save_at_step:
                     self._save_requested = True
                     self._save_at_step = None
-                if self._pending_learning_rate is not None and self._rate_handler is not None and not self._stop_requested:
+                if self._pending_learning_rate is not None and not self._stop_requested:
                     rate = self._pending_learning_rate
                     self._pending_learning_rate = None
                     handler = self._rate_handler
@@ -162,17 +155,6 @@ class TrainingControl:
                         self._saving = False
                     self._condition.notify_all()
 
-    def take_learning_rate(self):
-        """The training loop takes a pending value and applies it itself."""
-        with self._condition:
-            value = self._pending_learning_rate
-            self._pending_learning_rate = None
-            return value
-
-    def report_learning_rate(self, value):
-        with self._condition:
-            self._learning_rate = value
-
     def finish(self):
         with self._condition:
             self._finished = True
@@ -194,8 +176,7 @@ class TrainingControl:
                 "learning_rate_error": self._rate_error,
                 "capabilities": {"pause": True, "stop": True,
                                  "save_checkpoint": self._save_handler is not None,
-                                 "learning_rate": self._learning_rate is not None},
-                "saving_enabled": self._save_handler is not None,
+                                 "learning_rate": self._rate_handler is not None},
                 "save_requested": self._save_requested,
                 "saving": self._saving,
                 "last_checkpoint": self._last_checkpoint,

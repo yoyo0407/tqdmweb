@@ -90,7 +90,7 @@ class RegisteredControlTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 progress.register_controls(save_checkpoint=lambda: "file.pt",
                                            set_learning_rate=lambda value: None, learning_rate=invalid)
-            self.assertFalse(progress.control.snapshot()["saving_enabled"])
+            self.assertFalse(progress.control.snapshot()["capabilities"]["save_checkpoint"])
         with self.assertRaises(TypeError):
             progress.register_controls(save_checkpoint="file.pt")
         list(progress)

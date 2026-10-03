@@ -51,18 +51,18 @@ class ProgressTests(unittest.TestCase):
         progress = Progress(range(100_000))
         for step in progress:
             progress.set_postfix(loss=step)
-        state = progress.snapshot()
-        self.assertEqual(len(state["loss_recent"]), 300)
-        self.assertLessEqual(len(state["loss_overview"]), 600)
-        self.assertEqual(state["loss_overview"][0][1], 0)
-        self.assertEqual(state["loss_overview"][-1][1], 99_999)
+        history = progress.snapshot()["charts"]["loss"]
+        self.assertEqual(len(history["recent"]), 300)
+        self.assertLessEqual(len(history["overview"]), 600)
+        self.assertEqual(history["overview"][0][1], 0)
+        self.assertEqual(history["overview"][-1][1], 99_999)
 
     def test_invalid_loss_does_not_corrupt_chart(self):
         progress = Progress([])
         progress.set_postfix(loss=0.5)
         for invalid in ("not a number", float("nan"), float("inf")):
             progress.set_postfix(loss=invalid)
-        self.assertEqual(len(progress.snapshot()["loss_recent"]), 1)
+        self.assertEqual(len(progress.snapshot()["charts"]["loss"]["recent"]), 1)
 
     def test_chart_coordinates_and_sparse_metrics_after_resume(self):
         progress = Progress(range(2), initial=40, total=42)

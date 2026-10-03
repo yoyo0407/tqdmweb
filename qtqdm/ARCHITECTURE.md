@@ -40,7 +40,7 @@ Python 主執行緒負責訓練，背景 `ThreadingHTTPServer` 負責網頁請�
 
 資料顯示：訓練呼叫 `set_postfix()` → 更新狀態與 CSV → 網頁讀取 `GET /state`。
 
-`/state` 的 `charts` 依指標名稱提供 `recent` 與 `overview`。每個點是 `[經過秒數, 數值, 項目步數, set_postfix 更新編號]`，步數以當前已開始處理的項目計算，接續工作會保留原步數。文字、布林值及非有限數值不加入曲線，但仍保留在最新指標與 CSV。原本的 `loss_recent`／`loss_overview` 仍回傳 `[經過秒數, loss]`，保留讀取相容性。
+`/state` 的 `charts` 依指標名稱提供 `recent` 與 `overview`。每個點是 `[經過秒數, 數值, 項目步數, set_postfix 更新編號]`，步數以當前已開始處理的項目計算，接續工作會保留原步數。文字、布林值及非有限數值不加入曲線，但仍保留在最新指標與 CSV。Loss 使用 `charts.loss`，與其他指標共用格式。
 
 兩張圖各自持有 X 軸種類、Y 指標與範圍，預設使用步數／loss（沒有 loss 時選第一個數值指標）。設定只存在目前頁面，重新整理會恢復預設；圖表設定不送到訓練控制端。切換軸種類會清除該軸範圍，另一軸保持不變。指定範圍時裁切繪圖，不刪除歷史資料；Y 軸自動範圍依 X 範圍內的取樣點計算，沒有點時使用整段資料。
 
@@ -57,7 +57,7 @@ Python 主執行緒負責訓練，背景 `ThreadingHTTPServer` 負責網頁請�
 | `pause` | 不需要 | 等待目前這一步完成後暫停 |
 | `resume` | 不需要 | 喚醒暫停的迴圈 |
 | `stop` | 不需要 | 在下一個邊界結束迴圈，也能停止已暫停的工作 |
-| `learning_rate` | 大於零的有限數值 | 訓練端取出並套用，之後回報已生效值 |
+| `learning_rate` | 大於零的有限數值 | 步驟邊界呼叫註冊 handler，之後回報已生效值 |
 | `save` | 不需要 | 在下一個步驟邊界保存，暫停時也能保存 |
 | `schedule_save` | 尚未完成且不超過總目標的整數步數 | 完成指定步數後保存一次；新預訂取代舊預訂 |
 | `cancel_save` | 不需要 | 取消尚未觸發的預訂 |
@@ -67,7 +67,7 @@ Python 主執行緒負責訓練，背景 `ThreadingHTTPServer` 負責網頁請�
 
 ## Registered controls
 
-`Progress.register_controls` 是公開入口，轉交 `TrainingControl.register_controls`。Script 提供 `save_checkpoint()` 與 `set_learning_rate(value)`，後者同時提供初始 learning rate；函式不直接依賴 PyTorch。Qtqdm 在下一個 step boundary 自動呼叫已註冊 handler，將結果寫回 control state，不需在 training loop 使用 `take_learning_rate`。舊的手動接口保留。
+`Progress.register_controls` 是公開入口，轉交 `TrainingControl.register_controls`。Script 提供 `save_checkpoint()` 與 `set_learning_rate(value)`，後者同時提供初始 learning rate；函式不直接依賴 PyTorch。Qtqdm 在下一個 step boundary 自動呼叫已註冊 handler，將結果寫回 control state。控制僅保留 handler 接入方式。
 
 `checkpoint()` 在 Condition 鎖內取得待處理指令，釋放鎖後執行 callback，再取得鎖回報結果。已暫停时也會被指令喚醒，處理後繼續等待；同一 boundary 先套用 learning rate，再執行保存。Stop 優先取消尚未套用的 learning rate；已排入的保存仍可完成。Callback 發生 Exception 時回報 `learning_rate_error`／`save_error`，不讓一般控制失敗中斷 training；不保證回滾 handler 內部的部分修改。
 
@@ -105,7 +105,7 @@ GPU 範例目前提供四個 Restart Hyperparameters：learning_rate > 0、momen
 
 ## 保存與接續
 
-訓練程式透過 `progress.control.enable_saving(save_function)` 提供保存函式，函式回傳保存路徑。網頁只送出要求；`control.py` 在訓練執行緒的步驟邊界呼叫函式，確保保存時沒有同時更新模型。寫檔時不持有控制鎖，網頁仍能讀取狀態。保存失敗會顯示原因並允許重試，訓練可繼續。
+訓練程式透過 `progress.register_controls(save_checkpoint=save_function)` 提供保存函式，函式回傳保存路徑。網頁只送出要求；`control.py` 在訓練執行緒的步驟邊界呼叫函式，確保保存時沒有同時更新模型。寫檔時不持有控制鎖，網頁仍能讀取狀態。保存失敗會顯示原因並允許重試，訓練可繼續。
 
 GPU 範例每次手動／預訂保存都建立新檔案，頁面顯示最近成功的路徑。同時只保留一個未來預訂，達到指定已完成步數時觸發一次，包含最後一步。取消只影響尚未觸發的預訂；提前結束會清除剩餘預訂。暫停中的手動保存不會讓訓練繼續。
 

@@ -27,7 +27,7 @@ class ControlTests(unittest.TestCase):
             calls.append(get_ident())
             return "paused.pt"
 
-        control.enable_saving(save)
+        control.register_controls(save_checkpoint=save)
         control.request("pause")
         worker = Thread(target=control.checkpoint, daemon=True)
         worker.start()
@@ -51,7 +51,7 @@ class ControlTests(unittest.TestCase):
             release.wait(timeout=3)
             return "slow.pt"
 
-        control.enable_saving(save)
+        control.register_controls(save_checkpoint=save)
         control.request("save")
         results = []
         worker = Thread(target=lambda: results.append(control.checkpoint()), daemon=True)
@@ -75,11 +75,11 @@ class ControlTests(unittest.TestCase):
         def fail():
             raise OSError("disk full")
 
-        control.enable_saving(fail)
+        control.register_controls(save_checkpoint=fail)
         control.request("save")
         self.assertTrue(control.checkpoint())
         self.assertEqual(control.snapshot()["save_error"], "OSError: disk full")
-        control.enable_saving(lambda: "retry.pt")
+        control.register_controls(save_checkpoint=lambda: "retry.pt")
         control.request("save")
         self.assertTrue(control.checkpoint())
         self.assertIsNone(control.snapshot()["save_error"])
@@ -95,7 +95,7 @@ class ControlTests(unittest.TestCase):
                     calls.append(progress.completed)
                     return "scheduled.pt"
 
-                progress.control.enable_saving(save)
+                progress.register_controls(save_checkpoint=save)
                 progress.control.request("schedule_save", scheduled)
                 list(progress)
                 self.assertEqual(calls, [scheduled])
@@ -106,7 +106,7 @@ class ControlTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             progress.control.request("schedule_save", 2)
         calls = []
-        progress.control.enable_saving(lambda: calls.append(progress.completed) or "test.pt")
+        progress.register_controls(save_checkpoint=lambda: calls.append(progress.completed) or "test.pt")
         for invalid in (0, -1, 4, True, 1.5):
             with self.assertRaises(ValueError):
                 progress.control.request("schedule_save", invalid)
@@ -118,27 +118,28 @@ class ControlTests(unittest.TestCase):
     def test_last_step_manual_save_is_not_lost(self):
         progress = Progress(range(3))
         calls = []
-        progress.control.enable_saving(lambda: calls.append(progress.completed) or "final.pt")
+        progress.register_controls(save_checkpoint=lambda: calls.append(progress.completed) or "final.pt")
         for item in progress:
             if item == 2:
                 progress.control.request("save")
         self.assertEqual(calls, [3])
 
-    def test_rate_polling_preserves_save_requests(self):
+    def test_rate_application_precedes_saving_at_same_boundary(self):
         progress = Progress(range(3))
         calls = []
-        progress.control.enable_saving(lambda: calls.append(progress.completed) or "test.pt")
+        rates = [0.1]
+        progress.register_controls(save_checkpoint=lambda: calls.append((progress.completed, rates[-1])) or "test.pt",
+                                   set_learning_rate=rates.append, learning_rate=0.1)
         progress.control.request("schedule_save", 2)
         for item in progress:
-            progress.control.take_learning_rate()
             if item == 0:
                 progress.control.request("save")
-                progress.control.take_learning_rate()
-        self.assertEqual(calls, [1, 2])
+                progress.control.request("learning_rate", 0.02)
+        self.assertEqual(calls, [(1, 0.02), (2, 0.02)])
 
     def test_finish_clears_future_save(self):
         control = TrainingControl()
-        control.enable_saving(lambda: "test.pt")
+        control.register_controls(save_checkpoint=lambda: "test.pt")
         control.request("schedule_save", 10)
         control.request("save")
         control.finish()
@@ -167,15 +168,16 @@ class ControlTests(unittest.TestCase):
         control = TrainingControl()
         with self.assertRaises(ValueError):
             control.request("learning_rate", 0.01)
-        control.report_learning_rate(0.1)
+        rates = []
+        control.register_controls(set_learning_rate=rates.append, learning_rate=0.1)
         for invalid in (0, -1, True, None, "bad", float("nan"), float("inf")):
             with self.assertRaises(ValueError):
                 control.request("learning_rate", invalid)
         control.request("learning_rate", 0.02)
         self.assertEqual(control.snapshot()["learning_rate"], 0.1)
-        self.assertEqual(control.take_learning_rate(), 0.02)
-        self.assertIsNone(control.take_learning_rate())
-        control.report_learning_rate(0.02)
+        control.checkpoint()
+        self.assertEqual(rates, [0.02])
+        self.assertIsNone(control.snapshot()["pending_learning_rate"])
         self.assertEqual(control.snapshot()["learning_rate"], 0.02)
         control.finish()
         self.assertFalse(control.request("pause"))
@@ -198,17 +200,14 @@ class ControlHttpTests(unittest.TestCase):
             return json.load(response)
 
     def test_pause_rate_resume_through_http(self):
-        self.progress.control.report_learning_rate(0.1)
-        self.post("pause")
         rates = []
+        self.progress.register_controls(set_learning_rate=rates.append, learning_rate=0.1)
+        self.post("pause")
 
         def train():
             with self.progress:
                 for item in self.progress:
-                    value = self.progress.control.take_learning_rate()
-                    if value is not None:
-                        rates.append(value)
-                        self.progress.control.report_learning_rate(value)
+                    pass
 
         worker = Thread(target=train, daemon=True)
         worker.start()
@@ -216,7 +215,8 @@ class ControlHttpTests(unittest.TestCase):
             wait_until(lambda: self.progress.snapshot()["state"] == "paused")
             self.assertEqual(self.progress.started, 0)
             self.post("learning_rate", 0.02)
-            self.assertEqual(self.progress.control.snapshot()["learning_rate"], 0.1)
+            wait_until(lambda: self.progress.control.snapshot()["learning_rate"] == 0.02)
+            self.assertEqual(self.progress.started, 0)
             self.post("resume")
             worker.join(timeout=3)
             self.assertFalse(worker.is_alive())

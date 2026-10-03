@@ -113,7 +113,6 @@ class Progress:
                 state = "pause_requested"
         with self._history_lock:
             charts = {name: history.snapshot() for name, history in self._chart_history.items()}
-            loss = charts.get("loss", {"recent": [], "overview": []})
         now = self.finished_at if self.finished_at is not None else monotonic()
         elapsed = 0 if self.started_at is None else now - self.started_at
         rate = (self.completed - self.initial) / elapsed if elapsed > 0 else 0
@@ -133,6 +132,4 @@ class Progress:
             "error": self.error,
             "metrics": self.metrics,
             "charts": charts,
-            "loss_recent": [point[:2] for point in loss["recent"]],
-            "loss_overview": [point[:2] for point in loss["overview"]],
         }
