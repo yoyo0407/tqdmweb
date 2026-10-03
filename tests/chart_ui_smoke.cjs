@@ -14,7 +14,7 @@ const wait=async(fn)=>{const end=Date.now()+15000;while(!await fn()){if(Date.now
  const small=points.map(p=>[p[0],0.000010001+(p[2]-19701)*1e-10,p[2],p[3]]);
  const data={history_updates:20000,description:'Chart display test',state:'finished',started:20000,completed:20000,total:20000,elapsed:200,rate:100,remaining:0,metrics:{score:'1588'},
   control:{finished:true,capabilities:{save_checkpoint:false,learning_rate:false},save_at_step:null},
-  charts:{score:{recent:points,overview:points},loss:{recent:small,overview:small}}};
+  charts:{score:{overview:points},loss:{overview:small}}};
  browser=await chromium.launch({executablePath:'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',headless:true});
  const context=await browser.newContext({deviceScaleFactor:2,viewport:{width:1280,height:900}});
  const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));

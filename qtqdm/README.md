@@ -58,7 +58,7 @@ finally:
 
 傳入數值指標後，頁面會畫出兩張曲線：Basic 的 Training History 是整段訓練的取樣總覽；Advanced 的 Full Metric History 完整保留每筆數值更新，不使用 rolling window。新 update 不會刪掉前面的 points，重新整理會從 server 重新讀回歷史。總覽接近 600 個 samples 時降低取樣密度，第一筆與最新一筆仍保留；它不是完整曲線。
 
-完整資料保存在 training process 記憶體，透過 `GET /history?after=UPDATE_INDEX` 每頁最多 2,000 次 updates 增量讀取，不在每次 `/state` 重送全部歷史。Board 另保留已收到的完整資料，process 結束後仍可刷新查看；新 process 會清空前一個 job 的畫面。完整歷史的 RAM 使用量會隨更新數增加，CSV 仍是磁碟上的完整紀錄。舊 `charts.recent` 的 300-point preview 僅保留作狀態 API 相容用途，Full Metric History 不使用它。
+完整資料保存在 training process 記憶體，透過 `GET /history?after=UPDATE_INDEX` 每頁最多 2,000 次 updates 增量讀取，不在每次 `/state` 重送全部歷史。Board 另保留已收到的完整資料，process 結束後仍可刷新查看；新 process 會清空前一個 job 的畫面。完整歷史的 RAM 使用量會隨更新數增加，CSV 仍是磁碟上的完整紀錄。
 
 ### 自訂座標軸
 
@@ -91,7 +91,7 @@ finally:
 
 暫停／繼續與提前停止由 `Qtqdm` 的迭代器處理。按暫停後，當前迴圈內容完成才會暫停，畫面會先顯示等待，再顯示已暫停；停止同樣在這個邊界生效，並會喚醒已暫停的迴圈。停止會結束本次迴圈，不能用繼續按鈕重新啟動。已寫入的 CSV 會保留。
 
-GPU 示範的訓練端另有 `training_checkpoint.py`，會在正常完成或受控停止後保存模型與 optimizer，並可使用 `--resume` 在新的工作中接續。這項保存由訓練程式負責；使用 Qtqdm 監看的其他程式也需要自行接入保存邏輯。
+2048 示範的訓練端另有 `rl2048_checkpoint.py`，會在正常完成或受控停止後保存模型與 optimizer，並可使用 `--resume` 在新的工作中接續。這項保存由訓練程式負責；使用 Qtqdm 監看的其他程式也需要自行接入保存邏輯。
 
 要啟用網頁保存，訓練端在迴圈前登記自己的函式：
 
@@ -103,13 +103,13 @@ def save_model():
 progress.register_controls(save_checkpoint=save_model)
 ```
 
-`write_training_checkpoint()` 是示意名稱，實際完整範例見 `gpu_training_demo.py`。保存函式在訓練執行緒執行，會暫時等待寫檔完成後才繼續下一步；網頁仍可操作。未登記保存函式時，頁面隱藏保存控制。
+`write_training_checkpoint()` 是示意名稱，實際完整範例見 `rl2048_demo.py`。保存函式在訓練執行緒執行，會暫時等待寫檔完成後才繼續下一步；網頁仍可操作。未登記保存函式時，頁面隱藏保存控制。
 
 - `Save Checkpoint`：在下一個步驟邊界保存；已暫停時直接保存並維持暫停。
 - `Schedule Checkpoint`：輸入絕對步數，例如 200 表示完成第 200 步後保存一次；新預訂會取代舊預訂。
 - `Cancel Schedule`：取消尚未觸發的預訂，不能撤回已開始寫入的保存。
 
-頁面顯示等待、寫入中、成功路徑或失敗原因。保存失敗後可重試；已完成、停止或失敗的工作不能再送出保存要求。GPU 範例每次手動與預訂保存使用新檔名，保留舊檔案。
+頁面顯示等待、寫入中、成功路徑或失敗原因。保存失敗後可重試；已完成、停止或失敗的工作不能再送出保存要求。2048 範例每次手動與預訂保存使用新檔名，保留舊檔案。
 
 接續時可以寫 `Qtqdm(remaining_items, total=100, initial=40)`，讓新頁面從 `40 / 100` 開始，CSV 的項目編號也會從 41 接著記錄。
 
@@ -138,7 +138,7 @@ with progress:
         progress.set_postfix(loss=loss)
 ```
 
-`write_training_checkpoint` 與 `train_step` 是示意名稱；可執行的完整範例是 `../gpu_training_demo.py`。只需要儲存時可以只註冊 `save_checkpoint`；註冊 learning-rate handler 時必須提供目前 `learning_rate`。註冊資料先驗證，再啟用控制；開始迴圈後不能透過 `register_controls` 更換 handlers。
+`write_training_checkpoint` 與 `train_step` 是示意名稱；可執行的完整範例是 `../rl2048_demo.py`。只需要儲存時可以只註冊 `save_checkpoint`；註冊 learning-rate handler 時必須提供目前 `learning_rate`。註冊資料先驗證，再啟用控制；開始迴圈後不能透過 `register_controls` 更換 handlers。
 
 Qtqdm 自動在 step boundary 呼叫 handler，並回報成功／失敗。已暫停時也能保存與調整 learning rate，保持暫停；stop 已接受後不再執行尚未套用的 learning rate。Handler 在 training thread 執行且不持有控制鎖；慢 handler 會延後下一步，但不鎖住 HTTP server。失敗會顯示原因、保留上次成功回報的值並允許重試；handler 自行造成的部分修改不會自動回滾。
 
@@ -165,7 +165,7 @@ finally:
     progress.wait()
 ```
 
-`Follow Tail` 預設開啟，會自動捲動到最新輸出；關閉後可停在舊內容閱讀。`Copy Output` 複製目前可見的 buffer。網頁保留最近 65,536 個字元，超過時顯示提示；指定 `console_path` 可保存完整原始輸出，檔名必須是新檔案。GPU 範例自動建立 `.log`，與 CSV／checkpoint 使用相同時間前綴。
+`Follow Tail` 預設開啟，會自動捲動到最新輸出；關閉後可停在舊內容閱讀。`Copy Output` 複製目前可見的 buffer。網頁保留最近 65,536 個字元，超過時顯示提示；指定 `console_path` 可保存完整原始輸出，檔名必須是新檔案。2048 範例自動建立 `.log`，與 CSV／checkpoint 使用相同時間前綴。
 
 Console Output 是 plain text viewer，捕捉 `with` 期間的 Python text stream；不包含外部程式或 native code 直接寫入終端機的內容，也不提供 CMD 指令執行。常見 ANSI 顏色控制碼會移除，carriage return 轉成換行。既有 logging handler 若已綁定舊 stream，不會自動改綁；可在 `with` 內建立 handler，或直接呼叫 `progress.console.write(text)`。
 
@@ -177,9 +177,9 @@ Console Output 是 plain text viewer，捕捉 `with` 期間的 Python text strea
 
 Qtqdm 獨立頁面直接顯示 Progress、Metrics、Pause／Stop、Save Checkpoint、Console、Training History、Learning Rate、Schedule／Cancel Checkpoint、Full Metric History、capabilities 與 Axis Settings，不分 Basic／Advanced。只有外部 tqdmboard 使用 Basic／Advanced layout。
 
-GPU 範例的初始 learning rate、momentum、weight decay 與 target steps 透過啟動 arguments 設定。即時 Learning Rate 控制仍使用註冊 handler。`--keep-open` 只保留完成／停止／失敗的頁面供閱讀，Enter 關閉；在 tqdmboard 內也會保留，直到 Stop Process 或 Restart Process 通知結束。
+2048 範例的初始 learning rate 與 target steps 等透過啟動 arguments 設定。即時 Learning Rate 控制仍使用註冊 handler。`--keep-open` 只保留完成／停止／失敗的頁面供閱讀，Enter 關閉；在 tqdmboard 內也會保留，直到 Stop Process 或 Restart Process 通知結束。
 
-重新執行由 tqdmboard 的 Restart Process 處理：結束舊 process、啟動新 process。新 Qtqdm 使用新的 URL、CSV／log／checkpoint，舊檔保留。原本使用多次 run session 的 scripts 需改成直接建立 Qtqdm；可執行範例見 `../gpu_training_demo.py`。
+重新執行由 tqdmboard 的 Restart Process 處理：結束舊 process、啟動新 process。新 Qtqdm 使用新的 URL、CSV／log／checkpoint，舊檔保留。原本使用多次 run session 的 scripts 需改成直接建立 Qtqdm；可執行範例見 `../rl2048_demo.py`。
 
 ## 測試
 

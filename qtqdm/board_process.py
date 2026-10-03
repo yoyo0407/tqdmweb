@@ -14,7 +14,6 @@ from urllib.request import Request, urlopen
 
 from .board_files import validate_launch
 from .console import ConsoleOutput
-from .board_checkpoints import prepare_launch
 from .board_errors import failure_info
 
 
@@ -86,7 +85,7 @@ class ProcessRunner:
         waiter.start()
 
     def start(self, data):
-        config = prepare_launch(validate_launch(data), data.get('checkpoint_path'))
+        config = validate_launch(data)
         with self._lock:
             if self._closing:
                 raise ValueError("App is closing")
@@ -97,7 +96,7 @@ class ProcessRunner:
             self._start_locked(config)
 
     def restart(self, data):
-        config = prepare_launch(validate_launch(data), data.get('checkpoint_path'))
+        config = validate_launch(data)
         with self._lock:
             if self._closing or self._pending is not None:
                 raise ValueError("Restart is unavailable")

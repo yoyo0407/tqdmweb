@@ -8,49 +8,11 @@ from time import monotonic, sleep
 import unittest
 import zipfile
 
-import torch
-
-from qtqdm.board_checkpoints import inspect_checkpoint, prepare_launch
-from qtqdm.board_files import validate_launch
 from qtqdm.board_process import ProcessRunner
 from qtqdm.board_records import RunRecords
-from qtqdm.board_checkpoint_worker import inspect
 
 
 class BoardFeatureTests(unittest.TestCase):
-    def test_checkpoint_validation_rejects_wrong_format_shape_steps_and_duplicate_resume(self):
-        root = Path.cwd()
-        with TemporaryDirectory() as folder:
-            path = Path(folder) / 'checkpoint.pt'
-            config = validate_launch({'script': str(root / 'gpu_training_demo.py'), 'python': sys.executable,
-                                      'working_directory': str(root), 'arguments': '--steps 30'})
-            state = {'format_version': 1, 'model': {'weight': torch.zeros(1, 8), 'bias': torch.zeros(1)},
-                     'optimizer': {'state': {}, 'param_groups': [{'lr': 0.1, 'params': [0, 1]}]},
-                     'next_step': 10, 'target_steps': 20, 'cpu_rng_state': torch.get_rng_state(), 'cuda_rng_state': None}
-            torch.save(state, path)
-            report = inspect_checkpoint(config, str(path))
-            self.assertEqual(report['next_step'], 10)
-            prepared = prepare_launch(config, str(path))
-            self.assertEqual(prepared['argv'][-2:], ['--resume', str(path)])
-            with self.assertRaisesRegex(ValueError, 'Remove --resume'):
-                prepare_launch({**config, 'argv': ['--resume', str(path)]}, str(path))
-            contract = json.loads((root / 'gpu_training_demo.tqdmboard.json').read_text())
-            payload = {'contract': contract, 'argv': ['--steps', '30'], 'path': str(path)}
-            torch.save({'model': {}}, path)
-            with self.assertRaisesRegex(ValueError, 'version'):
-                inspect(payload)
-            state['model']['weight'] = torch.zeros(1, 7)
-            torch.save(state, path)
-            with self.assertRaisesRegex(ValueError, 'shape mismatch'):
-                inspect(payload)
-            state['model']['weight'] = torch.zeros(1, 8)
-            torch.save(state, path)
-            with self.assertRaisesRegex(ValueError, 'greater than'):
-                inspect({**payload, 'argv': ['--steps', '10']})
-            path.write_bytes(b'not a checkpoint')
-            with self.assertRaises(ValueError):
-                inspect_checkpoint(config, str(path))
-
     def test_rename_export_delete_and_active_record_guard(self):
         with TemporaryDirectory() as folder:
             root = Path(folder)

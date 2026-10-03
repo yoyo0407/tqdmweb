@@ -11,7 +11,6 @@ from urllib.request import Request, urlopen
 
 from qtqdm.board import TqdmBoard
 from qtqdm.board_records import RunRecords
-from qtqdm.board_viewers import BoardViewers
 from qtqdm.board_process import ProcessRunner
 from qtqdm.board_training import TrainingBridge
 from qtqdm import Qtqdm
@@ -210,43 +209,3 @@ class RecordTests(unittest.TestCase):
             finally:
                 board.close()
 
-
-class ViewerTests(unittest.TestCase):
-    def test_out_of_order_heartbeat_does_not_reopen_closed_tab(self):
-        viewers = BoardViewers(grace=0)
-        viewers.update('tab', sequence=1)
-        viewers.update('tab', True, sequence=3)
-        viewers.update('tab', sequence=2)
-        self.assertTrue(viewers.should_close())
-        viewers.update('tab', sequence=4)
-        self.assertFalse(viewers.should_close())
-
-    def test_reload_and_multiple_tabs_and_last_close(self):
-        viewers = BoardViewers()
-        with patch('qtqdm.board_viewers.monotonic', return_value=0):
-            self.assertFalse(viewers.should_close())
-            viewers.update('first')
-            viewers.update('second')
-            viewers.update('first', True)
-            self.assertFalse(viewers.should_close())
-            viewers.update('second', True)
-            self.assertFalse(viewers.should_close())
-        with patch('qtqdm.board_viewers.monotonic', return_value=2):
-            viewers.update('refreshed')
-        with patch('qtqdm.board_viewers.monotonic', return_value=5):
-            self.assertFalse(viewers.should_close())
-            viewers.update('refreshed', True)
-            self.assertFalse(viewers.should_close())
-        with patch('qtqdm.board_viewers.monotonic', return_value=8):
-            self.assertTrue(viewers.should_close())
-
-    def test_crashed_browser_lease_expires(self):
-        viewers = BoardViewers()
-        with patch('qtqdm.board_viewers.monotonic', return_value=0):
-            viewers.update('tab')
-        with patch('qtqdm.board_viewers.monotonic', return_value=89):
-            self.assertFalse(viewers.should_close())
-        with patch('qtqdm.board_viewers.monotonic', return_value=90):
-            self.assertFalse(viewers.should_close())
-        with patch('qtqdm.board_viewers.monotonic', return_value=93):
-            self.assertTrue(viewers.should_close())

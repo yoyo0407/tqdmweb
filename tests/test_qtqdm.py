@@ -52,7 +52,6 @@ class ProgressTests(unittest.TestCase):
         for step in progress:
             progress.set_postfix(loss=step)
         history = progress.snapshot()["charts"]["loss"]
-        self.assertEqual(len(history["recent"]), 300)
         self.assertLessEqual(len(history["overview"]), 600)
         self.assertEqual(history["overview"][0][1], 0)
         self.assertEqual(history["overview"][-1][1], 99_999)
@@ -62,7 +61,7 @@ class ProgressTests(unittest.TestCase):
         progress.set_postfix(loss=0.5)
         for invalid in ("not a number", float("nan"), float("inf")):
             progress.set_postfix(loss=invalid)
-        self.assertEqual(len(progress.snapshot()["charts"]["loss"]["recent"]), 1)
+        self.assertEqual(len(progress.snapshot()["charts"]["loss"]["overview"]), 1)
 
     def test_chart_coordinates_and_sparse_metrics_after_resume(self):
         progress = Progress(range(2), initial=40, total=42)
@@ -72,17 +71,16 @@ class ProgressTests(unittest.TestCase):
                 progress.set_postfix(learning_rate=0.01, loss=float("nan"))
         charts = progress.snapshot()["charts"]
         self.assertEqual(set(charts), {"loss", "accuracy", "learning_rate"})
-        self.assertEqual([point[2:] for point in charts["loss"]["recent"]], [[41, 1], [42, 2]])
-        self.assertEqual(charts["accuracy"]["recent"][-1][1:], [0.8, 42, 2])
-        self.assertEqual(charts["learning_rate"]["recent"][0][1:], [0.01, 42, 3])
-        self.assertGreaterEqual(charts["loss"]["recent"][1][0], charts["loss"]["recent"][0][0])
+        self.assertEqual([point[2:] for point in charts["loss"]["overview"]], [[41, 1], [42, 2]])
+        self.assertEqual(charts["accuracy"]["overview"][-1][1:], [0.8, 42, 2])
+        self.assertEqual(charts["learning_rate"]["overview"][0][1:], [0.01, 42, 3])
+        self.assertGreaterEqual(charts["loss"]["overview"][1][0], charts["loss"]["overview"][0][0])
 
     def test_each_chart_history_is_bounded(self):
         progress = Progress(range(2000))
         for step in progress:
             progress.set_postfix(loss=step, accuracy=step / 2000)
         for history in progress.snapshot()["charts"].values():
-            self.assertEqual(len(history["recent"]), 300)
             self.assertLessEqual(len(history["overview"]), 600)
             self.assertEqual(history["overview"][0][2:], [1, 1])
             self.assertEqual(history["overview"][-1][2:], [2000, 2000])

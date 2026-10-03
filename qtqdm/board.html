@@ -61,13 +61,6 @@
         <label>Python Script<input id="script" type="text" readonly required></label>
         <button id="choose-script" type="button">Choose Script...</button>
         <label>Arguments<input id="arguments" type="text" placeholder="--steps 20000 --learning-rate 0.0001"></label>
-        <label>Checkpoint (optional)<input id="checkpoint-path" type="text" readonly placeholder="Start a new run without a checkpoint"></label>
-        <div class="controls">
-          <button id="choose-checkpoint" type="button">Choose Checkpoint...</button>
-          <button id="inspect-checkpoint" type="button">Inspect Checkpoint</button>
-          <button id="clear-checkpoint" type="button">Clear Checkpoint</button>
-        </div>
-        <p id="checkpoint-status" class="hint" role="status"></p>
         <h2>Launch Settings</h2>
         <label>Python Executable<input id="python" type="text" list="environments" required form="launch-form"></label>
         <datalist id="environments"></datalist>
