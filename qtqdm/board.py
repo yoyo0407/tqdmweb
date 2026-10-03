@@ -69,7 +69,7 @@ class TqdmBoard:
                                            "training": board.training.snapshot(process)})
                     elif route.path == "/config":
                         config = board.runner.snapshot()["config"]
-                        script = board.directory / "gpu_training_demo.py"
+                        script = board.directory / "rl2048_demo.py"
                         self.respond_json({"python_environments": python_environments(board.directory), "config": config or {
                             "script": str(script) if script.is_file() else "", "python": sys.executable,
                             "working_directory": str(board.directory), "arguments": ""}})

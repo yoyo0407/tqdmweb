@@ -2,6 +2,8 @@
 
 本機 Python training app。啟動 App 一次後，可在同一個網頁選擇不同的 Python scripts；training subprocess 結束後，App server 仍保持運作。不需要安裝新的 Python 套件。
 
+目前預設 demo 是 `rl2048_demo.py`，使用公開 2048 DQN，在 RTX 5060 訓練。執行方式、metrics、checkpoint 接續與來源見 `2048_DEMO.md`；demo 額外需要 `requirements-2048.txt`，Board 本身仍只使用標準函式庫。
+
 ## 啟動
 
 在專案目錄的 CMD 執行：

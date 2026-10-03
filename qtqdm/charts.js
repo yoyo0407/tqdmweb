@@ -23,7 +23,7 @@ function createChart(containerId, historyKind, settingsContainerId = null) {
   if (settingsContainerId) document.getElementById(settingsContainerId).replaceChildren(form);
   const field = name => form.elements.namedItem(name);
   const canvas = container.querySelector("canvas");
-  const error = container.querySelector(".chart-error");
+  const error = form.querySelector(".chart-error");
   const caption = container.querySelector(".chart-caption");
   let histories = {};
   let settings = {x: 2, y: null, xmin: null, xmax: null, ymin: null, ymax: null};

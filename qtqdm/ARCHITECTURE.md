@@ -24,6 +24,9 @@
 | `../gpu_training_demo.py` | 建立 PyTorch 模型、實際套用 learning rate、執行 GPU 訓練 |
 | `../training_checkpoint.py` | 保存／載入模型、optimizer、下一步編號與隨機數狀態 |
 | `../training_config.py` | GPU 範例的 hyperparameter 驗證，不依賴 PyTorch |
+| `../rl2048_demo.py` | 公開 2048 DQN 的 Qtqdm adapter；每個 move 回報 metrics 與處理 controls |
+| `../rl2048_checkpoint.py` | 保存／恢復 model、target、optimizer、replay、game 與 RNG |
+| `../third_party/rl2048/` | 固定版本的 MIT 上游環境、DQN、network 與 replay buffer，保留來源與修改紀錄 |
 
 `qtqdm/__init__.py` 是公開匯入入口，讓使用者寫 `from qtqdm import Qtqdm`。`Qtqdm` 繼承 `Progress`，再加上 HTTP 伺服器；`Progress` 分別持有控制模組和 CSV 紀錄器。監看套件本身不需要 PyTorch。
 
