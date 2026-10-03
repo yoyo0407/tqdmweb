@@ -3,6 +3,7 @@
 from threading import Condition, Thread
 import traceback
 import webbrowser
+import os
 
 from .dashboard import Dashboard
 from .web import Qtqdm
@@ -81,6 +82,9 @@ class TrainingSession:
 
     def run(self, train, open_browser=True, keep_open=False):
         """The callback creates a fresh progress/model/optimizer for each run."""
+        if os.environ.get("TQDMBOARD") == "1":
+            open_browser = False
+            keep_open = True
         self.dashboard.start()
         if open_browser:
             webbrowser.open(self.dashboard.url)

@@ -2,6 +2,8 @@
 
 用 Python 包裝一個迴圈，並在本機瀏覽器顯示即時進度。這個版本只用 Python 標準函式庫與原生 HTML／JavaScript，不需要發布套件或安裝網頁框架。
 
+要從同一個 App 選擇不同 Python scripts，請在專案目錄執行 `tqdmboard.cmd`。App 提供 Local File Browser、environment／arguments selection、Process Console 與嵌入式 Training Dashboard；training process 結束後 App 仍運作。詳見 `../TQDMBOARD.md`。
+
 ## 使用
 
 在專案根目錄執行 `example.py`。一般程式可以這樣寫：

@@ -3,6 +3,7 @@
 from time import monotonic
 import webbrowser
 import traceback as traceback_module
+import os
 
 from .progress import Progress
 from .console import ConsoleCapture, ConsoleOutput
@@ -13,7 +14,7 @@ class Qtqdm(Progress):
     def __init__(self, items, total=None, description="", open_browser=True, csv_path=None, initial=0,
                  capture_console=True, console_path=None, dashboard=None):
         super().__init__(items, total=total, description=description, csv_path=csv_path, initial=initial)
-        self.open_browser = open_browser
+        self.open_browser = open_browser and os.environ.get("TQDMBOARD") != "1"
         self._owns_dashboard = dashboard is None
         self._dashboard = dashboard or Dashboard(self.snapshot, self.control.request)
         self.console = ConsoleOutput(console_path)

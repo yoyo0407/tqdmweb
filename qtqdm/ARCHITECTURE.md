@@ -11,6 +11,10 @@
 | `dashboard.py` | 本機 HTTP server，驗證請求後呼叫 state／control callback |
 | `session.py` | 跨 run 的 lifecycle，排程 Restart 並維持同一個 URL |
 | `restart.js` | Restart Hyperparameters 表單與狀態 |
+| `board.py` | tqdmboard App HTTP server，不隨 training process 結束 |
+| `board.html`／`board.js` | Local File Browser 與 launcher UI，嵌入 training dashboard |
+| `board_files.py` | Folder listing、Python environment discovery、arguments／paths 驗證 |
+| `board_process.py` | 啟動、停止、重啟 subprocess，收集原始 stdout／stderr |
 | `control.py` | 使用 Condition 協調網頁執行緒與訓練執行緒 |
 | `progress.py` | 計數、歷史取樣，每一步開始前檢查控制狀態 |
 | `csv_log.py` | 保存完整指標更新 |
@@ -19,6 +23,14 @@
 | `../training_config.py` | GPU 範例的 hyperparameter 驗證，不依賴 PyTorch |
 
 `qtqdm/__init__.py` 是公開匯入入口，讓使用者寫 `from qtqdm import Qtqdm`。`Qtqdm` 繼承 `Progress`，再加上 HTTP 伺服器；`Progress` 分別持有控制模組和 CSV 紀錄器。監看套件本身不需要 PyTorch。
+
+## tqdmboard App
+
+`../tqdmboard.cmd` 呼叫專案 `.venv` 的 Python 執行 `../tqdmboard.py`，進入 `board.py`。App HTTP server 與 Python training subprocess 分開；App 本身只依賴標準函式庫。`board_process.py` 以 shell=False 與獨立 argument list 啟動所選 script，保留 stdin pipe，收集合併的 stdout／stderr。每個 process 建立新 log，網頁只保留 bounded console buffer。
+
+ProcessRunner 發現 `Qtqdm page: http://127.0.0.1:PORT/` 後，App 在 iframe 顯示原 training dashboard，保留既有 controls 與 hyperparameter form。App 透過 `TQDMBOARD=1` 告知 Qtqdm／TrainingSession 不另開分頁，並讓 TrainingSession 在工作完成後繼續等待 Restart。外部 folder 的 scripts 透過 PYTHONPATH 找到 Qtqdm，不需手動修改既有 compliant scripts。
+
+`Restart Process` 會要求舊 process graceful stop，等待 exit 後才啟動新的 process；`Restart` training action 則由 child TrainingSession 處理。兩者分開，model／optimizer 仍只存在 training process 中。App server 在 child exit 後仍可選擇其他 script。完整使用方式與框架見 `../TQDMBOARD.md`。
 
 ## 執行位置
 

@@ -15,7 +15,7 @@ class ConsoleOutput:
         self._error = None
         self.max_chars = max_chars
         self.path = Path(path).resolve() if path is not None else None
-        self._file = self.path.open("x", encoding="utf-8") if self.path is not None else None
+        self._file = self.path.open("x", encoding="utf-8", newline="") if self.path is not None else None
 
     def write(self, text):
         with self._lock:

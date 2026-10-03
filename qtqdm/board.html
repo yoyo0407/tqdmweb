@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>tqdmboard</title>
+  <style>
+    body { font: 16px system-ui, sans-serif; max-width: 1000px; margin: 24px auto; padding: 0 16px; color: #202124; }
+    [hidden] { display: none !important; }
+    button, input { font: inherit; padding: 8px; }
+    input[type=text] { width: 100%; box-sizing: border-box; }
+    label { display: block; margin: 12px 0; }
+    h2 { font-size: 1.15rem; }
+    .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .hint { font-size: 0.85rem; color: #59636e; overflow-wrap: anywhere; }
+    #files { max-height: 260px; overflow: auto; padding: 0; list-style: none; border: 1px solid #b8c2cc; }
+    #files button { width: 100%; text-align: left; border: 0; background: transparent; overflow-wrap: anywhere; cursor: pointer; }
+    #files button:hover { background: #f5f7fa; }
+    #console-output { max-height: 280px; min-height: 100px; overflow: auto; border: 1px solid #b8c2cc; padding: 12px; font: 13px/1.5 monospace; white-space: pre; }
+    #message { min-height: 1.2em; overflow-wrap: anywhere; }
+    iframe { width: 100%; height: 80vh; min-height: 600px; border: 1px solid #b8c2cc; box-sizing: border-box; }
+  </style>
+</head>
+<body>
+  <h1>tqdmboard</h1>
+  <p class="hint">Select a local Python script and environment. Training runs in a separate process; this app stays open.</p>
+  <details open>
+    <summary>Local File Browser</summary>
+    <form id="browse-form"><label>Directory<input id="directory" type="text" required></label>
+      <div class="controls"><button type="submit">Browse</button><button id="parent" type="button">Parent Directory</button></div>
+    </form>
+    <ul id="files"></ul>
+  </details>
+  <form id="launch-form">
+    <label>Python Script<input id="script" type="text" required></label>
+    <label>Python Executable<input id="python" type="text" list="environments" required></label>
+    <datalist id="environments"></datalist>
+    <button id="autodetect" type="button">Use Detected Environment</button>
+    <label>Working Directory<input id="working-directory" type="text" required></label>
+    <label>Arguments<input id="arguments" type="text" placeholder='--steps 100 --learning-rate 0.03'></label>
+    <div class="controls">
+      <button id="run" type="submit">Run</button>
+      <button id="restart-process" type="button">Restart Process</button>
+      <button id="stop-process" type="button" disabled>Stop Process</button>
+      <button id="force-stop" type="button" disabled>Force Stop</button>
+      <button id="quit" type="button">Quit App</button>
+    </div>
+  </form>
+  <p id="message" role="status"></p>
+  <p id="process-status" class="hint"></p>
+  <section>
+    <h2>Process Console</h2>
+    <div class="controls">
+      <label><input id="console-follow" type="checkbox" checked> Follow Tail</label>
+      <button id="console-copy" type="button">Copy Output</button>
+      <span id="console-copy-status" class="hint" role="status"></span>
+    </div>
+    <pre id="console-output" role="log" aria-label="Process stdout and stderr" tabindex="0">Waiting for stdout / stderr...</pre>
+    <p id="console-status" class="hint"></p>
+  </section>
+  <section id="training-section" hidden>
+    <h2>Training Dashboard</h2>
+    <p class="hint">Training Restart resets model / optimizer with hyperparameters. Restart Process reloads the script with the launcher arguments.</p>
+    <a id="dashboard-link" target="_blank" rel="noopener">Open Dashboard</a>
+    <iframe id="training-frame" title="Qtqdm training dashboard" allow="clipboard-read; clipboard-write"></iframe>
+  </section>
+  <script src="/console.js"></script>
+  <script src="/board.js"></script>
+</body>
+</html>
