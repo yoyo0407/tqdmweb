@@ -87,7 +87,8 @@ function createRecordView(request) {
       document.getElementById("delete-record").disabled = !record.ended && ["running", "detached"].includes(record.state);
       renderRunError("record-error", record.failure);
       displayedVersion = recordVersion(record);
-      byId("config").textContent = `Python: ${record.config.python}\nScript: ${record.config.script}\nArguments: ${record.config.arguments}\nWorking Directory: ${record.config.working_directory}`;
+      byId("config").textContent = `Python: ${record.config.python}\nScript: ${record.config.script}\nArguments: ${record.config.arguments}\nWorking Directory: ${record.config.working_directory}` +
+        (record.config.patch_tqdm ? "\nLaunched with: python -m qtqdm (Patch tqdm)" : "");
       const exitCode = record.exit_code ?? (record.state === "running" ? "Pending (process running)" :
         record.state === "detached" ? "Pending (process detached)" : "Unknown (exit not recorded)");
       renderValues(byId("summary"), {"Process State": record.state, "Exit Code": exitCode,

@@ -17,6 +17,13 @@ from .console import ConsoleOutput
 from .board_errors import failure_info
 
 
+def launch_command(config):
+    """Patch mode runs the script through `python -m qtqdm` so plain tqdm shows in the dashboard."""
+    if config.get("patch_tqdm"):
+        return [config["python"], "-u", "-m", "qtqdm", config["script"], *config["argv"]]
+    return [config["python"], "-u", config["script"], *config["argv"]]
+
+
 class ProcessRunner:
     def __init__(self, project_root, records=None):
         self.project_root = Path(project_root).resolve()
@@ -50,7 +57,7 @@ class ProcessRunner:
         environment["PYTHONIOENCODING"] = "utf-8"
         environment["PYTHONUNBUFFERED"] = "1"
         environment["PYTHONPATH"] = str(self.project_root) + os.pathsep + environment.get("PYTHONPATH", "")
-        command = [config["python"], "-u", config["script"], *config["argv"]]
+        command = launch_command(config)
         record_id = self.records.start(config, log_path) if self.records else None
         if self.records:
             environment['TQDMBOARD_RECORD_ID'] = record_id

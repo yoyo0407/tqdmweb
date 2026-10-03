@@ -20,7 +20,7 @@ function updateButtons() {
   byId("force-stop").disabled = busy || !connected || !lastState?.running;
   byId("quit").disabled = !connected;
   for (const id of ["choose-script", "choose-python", "choose-directory"]) byId(id).disabled = busy || !connected;
-  for (const id of ["arguments", "python", "working-directory"]) byId(id).disabled = busy;
+  for (const id of ["arguments", "patch-tqdm", "python", "working-directory"]) byId(id).disabled = busy;
 }
 
 async function request(url, options) {
@@ -61,7 +61,8 @@ async function selectPath(kind) {
 
 function launchConfig() {
   return {script: byId("script").value, python: byId("python").value,
-          working_directory: byId("working-directory").value, arguments: byId("arguments").value};
+          working_directory: byId("working-directory").value, arguments: byId("arguments").value,
+          patch_tqdm: byId("patch-tqdm").checked};
 }
 
 async function action(route, data = {}) {
@@ -163,6 +164,7 @@ async function refresh() {
     byId("python").value = config.python;
     byId("working-directory").value = config.working_directory;
     byId("arguments").value = config.arguments;
+    byId("patch-tqdm").checked = Boolean(config.patch_tqdm);
     updateEnvironments(data.python_environments);
   } catch (error) { message(error.message); }
   recordView.refreshRecords();

@@ -134,3 +134,7 @@ Standalone page 從 child `/history?after=...` 讀取。Board 的 TrainingBridge
 `Progress` 有兩種模式：傳入 iterable 時由 `__iter__` 計數；`items=None` 時是 manual 模式，由 `update(n)` 計數並在每次 update 後呼叫 `control.checkpoint()`。Manual bar 由 `_finalize_manual()` 在 `__exit__`／`close()` 時結束一次。
 
 `web.py` 的 `_active_bars` 記錄目前正在執行的 bars（開始執行時 `_on_start` 加入，結束時 `_deactivate` 移除）。新建立的 `Qtqdm` 若發現有正在執行的 bar，就成為它的子 bar：`root` 指向最外層、`depth` 加一，不開 server、不擷取 Console、不寫 run record。子 bar 的 `control` 換成 `_ChildControl`，它把 checkpoint 轉給最外層的 `TrainingControl`，所以 Pause／Stop／Save 會在內層邊界生效，而且子 bar 結束時不會把外層的控制標成 finished。最外層 `snapshot()` 的 `bars` 列出子 bar 的計數與速度，`training_view.js` 的 `renderBars` 畫在主進度條下方。
+
+## Zero-code tqdm patch
+
+`patch.py` 的 `install()` 在 script 匯入 tqdm 前，把 `tqdm`、`tqdm.auto`、`tqdm.autonotebook` 的 `tqdm`／`trange` 換成 `PatchedTqdm`（Qtqdm 子類，容忍 tqdm 的位置參數、未知 keyword 與純顯示方法）；未安裝 tqdm 時註冊簡易 stand-in modules。`__main__.py` 做完替換後以 `runpy.run_path` 執行 script。tqdmboard 勾選 `patch_tqdm` 時，`board_process.launch_command` 改用 `python -u -m qtqdm SCRIPT ARGS`，設定隨 run record 的 config JSON 保存。已知限制：第三方套件內的進度條也會成為 Qtqdm 進度條。

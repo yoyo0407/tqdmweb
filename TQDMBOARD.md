@@ -34,7 +34,7 @@ PowerShell 使用：
 
 | Tab | 內容 |
 | --- | --- |
-| Run | Script、Python Environment、Working Directory、Arguments、Run／Restart Process |
+| Run | Script、Python Environment、Working Directory、Arguments、`Patch tqdm (no code changes)` 勾選框（以 `python -m qtqdm` 啟動，免改 script 即可顯示 tqdm 進度條）、Run／Restart Process |
 | Monitor | Progress、Metrics、曲線、Pause／Resume／Stop、Save Checkpoint、Stop Process／Force Stop |
 | Console | 目前 process 的 stdout／stderr、Follow Tail、Copy Output、完整 Log Path |
 | History | Recorded Run · Read-only，內含 Overview／Charts／Console |

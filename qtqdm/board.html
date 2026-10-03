@@ -62,6 +62,8 @@
         <label>Python Script<input id="script" type="text" readonly required></label>
         <button id="choose-script" type="button">Choose Script...</button>
         <label>Arguments<input id="arguments" type="text" placeholder="--steps 20000 --learning-rate 0.0001"></label>
+        <label><input id="patch-tqdm" type="checkbox"> Patch tqdm (no code changes)</label>
+        <p class="hint">Runs the script with <code>python -m qtqdm</code> so <code>from tqdm import tqdm</code> shows in the dashboard.</p>
         <h2>Launch Settings</h2>
         <label>Python Executable<input id="python" type="text" list="environments" required form="launch-form"></label>
         <datalist id="environments"></datalist>

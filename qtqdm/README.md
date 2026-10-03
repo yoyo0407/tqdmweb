@@ -213,6 +213,20 @@ Qtqdm 獨立頁面直接顯示 Progress、Metrics、Pause／Stop、Save Checkpoi
 
 重新執行由 tqdmboard 的 Restart Process 處理：結束舊 process、啟動新 process。新 Qtqdm 使用新的 URL、CSV／log／checkpoint，舊檔保留。原本使用多次 run session 的 scripts 需改成直接建立 Qtqdm；可執行範例見 `../rl2048_demo.py`。
 
+## 不改程式碼接入（python -m qtqdm）
+
+已使用 `from tqdm import tqdm`、`from tqdm.auto import tqdm` 或 `trange` 的 script，不需修改即可顯示在 Qtqdm 頁面：
+
+```
+python -m qtqdm train.py --epochs 3
+```
+
+啟動時會印出 `qtqdm: patched tqdm (...) for train.py`，之後以 `runpy` 執行 script（`sys.argv` 與 `sys.path[0]` 與直接執行相同）。
+
+被替換的項目：已安裝的 tqdm 的 `tqdm.tqdm`、`tqdm.trange`、`tqdm.auto.*`、`tqdm.autonotebook.*`；未安裝 tqdm 時改為註冊同名的簡易 `tqdm`、`tqdm.auto` 模組。替換的是 `qtqdm.patch.PatchedTqdm`（Qtqdm 的子類）：依 tqdm 的位置順序 `(iterable, desc, total, ...)` 接收參數，Qtqdm 不支援的 keyword 會忽略並在 stderr 警告一次；`refresh`、`clear`、`display`、`unpause` 不做事，`set_postfix_str` 存成 metric `postfix`，`tqdm.write` 等同 `print`。不提供 `reset()`，因為一個 Qtqdm 只監控一次 run。`tqdm.std`、`tqdm.notebook` 等其他模組不會被替換。
+
+限制：第三方套件內建的進度條（例如下載進度）也會變成 Qtqdm 進度條。在執行中的外層進度條內建立時成為 nested bar，否則各自開獨立頁面。tqdmboard 的 Run tab 勾選 `Patch tqdm (no code changes)` 即以此方式啟動。
+
 ## 測試
 
 在專案根目錄執行 `python -m unittest discover -s tests -v`。
