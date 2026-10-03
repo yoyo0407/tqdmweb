@@ -1,4 +1,4 @@
-"""Validate the SGD demo's restart hyperparameters without importing PyTorch."""
+"""Validate the SGD demo's launch parameters without importing PyTorch."""
 
 from math import isfinite
 

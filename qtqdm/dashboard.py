@@ -21,7 +21,6 @@ class Dashboard:
         page = Path(__file__).with_name("index.html").read_bytes()
         charts_script = Path(__file__).with_name("charts.js").read_bytes()
         console_script = Path(__file__).with_name("console.js").read_bytes()
-        restart_script = Path(__file__).with_name("restart.js").read_bytes()
 
         class Handler(BaseHTTPRequestHandler):
             def respond(self, content, kind, status=200):
@@ -42,8 +41,6 @@ class Dashboard:
                     content, kind = charts_script, "text/javascript; charset=utf-8"
                 elif self.path == "/console.js":
                     content, kind = console_script, "text/javascript; charset=utf-8"
-                elif self.path == "/restart.js":
-                    content, kind = restart_script, "text/javascript; charset=utf-8"
                 elif self.path == "/state":
                     content = json.dumps(dashboard.get_state()).encode("utf-8")
                     kind = "application/json; charset=utf-8"

@@ -1,4 +1,4 @@
-"""Local app server: file browser, process launcher and embedded Qtqdm UI."""
+"""Local app server: native selection, process launcher and Qtqdm UI."""
 
 import argparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -6,10 +6,11 @@ import json
 from pathlib import Path
 import sys
 from threading import Event, Thread
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import urlsplit
 import webbrowser
 
-from .board_files import browse_folder
+from .board_files import python_environments
+from .board_dialog import NativePicker
 from .board_process import ProcessRunner
 from .board_monitor import ResourceMonitor
 
@@ -20,6 +21,7 @@ class TqdmBoard:
         self.directory = Path(directory or self.project_root).resolve(strict=True)
         self.runner = ProcessRunner(self.project_root)
         self.monitor = ResourceMonitor()
+        self.picker = NativePicker(self.directory)
         self.closed = Event()
         self.server = None
         self.port = port
@@ -59,13 +61,10 @@ class TqdmBoard:
                         self.respond(*files[route.path])
                     elif route.path == "/state":
                         self.respond_json({**board.runner.snapshot(), "resources": board.monitor.snapshot()})
-                    elif route.path == "/browse":
-                        path = parse_qs(route.query).get("path", [str(board.directory)])[0]
-                        self.respond_json(browse_folder(path))
                     elif route.path == "/config":
                         config = board.runner.snapshot()["config"]
                         script = board.directory / "gpu_training_demo.py"
-                        self.respond_json({"directory": str(board.directory), "config": config or {
+                        self.respond_json({"python_environments": python_environments(board.directory), "config": config or {
                             "script": str(script) if script.is_file() else "", "python": sys.executable,
                             "working_directory": str(board.directory), "arguments": ""}})
                     else:
@@ -88,7 +87,17 @@ class TqdmBoard:
                     if not 0 < length <= 16384:
                         raise ValueError("Invalid request size")
                     data = json.loads(self.rfile.read(length))
-                    if self.path == "/run":
+                    if not isinstance(data, dict):
+                        raise ValueError("Expected a JSON object")
+                    if self.path == "/select-path":
+                        path = board.picker.pick(data.get("kind"), data.get("initial"))
+                        result = {"path": path}
+                        if path and data["kind"] == "script":
+                            result.update(working_directory=str(Path(path).parent),
+                                          python_environments=python_environments(Path(path).parent))
+                        self.respond_json(result)
+                        return
+                    elif self.path == "/run":
                         board.runner.start(data)
                     elif self.path == "/restart":
                         board.runner.restart(data)
@@ -121,6 +130,7 @@ class TqdmBoard:
             self.runner.close()
         finally:
             self.monitor.close()
+            self.picker.close()
             if self.server is not None:
                 self.server.shutdown()
                 self.server.server_close()

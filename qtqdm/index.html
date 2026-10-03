@@ -34,42 +34,19 @@
     .chart-caption { overflow-wrap: anywhere; }
     #console-output { max-height: 280px; min-height: 100px; overflow: auto; padding: 12px; border: 1px solid #b8c2cc; border-radius: 6px; font: 13px/1.5 monospace; white-space: pre; }
     #console-status { overflow-wrap: anywhere; }
-    #restart-fields label { display: flex; flex-direction: column; gap: 4px; }
-    #restart-fields input { width: 115px; }
+    summary { cursor: pointer; font-weight: 600; padding: 12px 0; }
   </style>
 </head>
 <body>
   <h1 id="description">Progress</h1>
   <div id="state">Waiting...</div>
-  <p id="run-id" class="hint"></p>
-  <p id="capabilities" class="hint"></p>
+  <h2>Basic</h2>
   <progress id="bar"></progress>
   <div class="controls">
     <button id="pause" type="button">Pause</button>
     <button id="stop" type="button">Stop</button>
     <button id="save" type="button" hidden>Save Checkpoint</button>
-    <button id="restart" type="submit" form="restart-form" hidden>Restart</button>
   </div>
-  <form id="lr-form" class="controls" hidden>
-    <label for="lr-input">Learning rate</label>
-    <input id="lr-input" type="number" step="any" min="0" required>
-    <button id="lr-apply" type="submit">Apply</button>
-    <span id="lr-current" class="hint"></span>
-  </form>
-  <section id="restart-section" hidden>
-    <h2>Restart Hyperparameters</h2>
-    <form id="restart-form">
-      <div id="restart-fields" class="controls"></div>
-    </form>
-    <p class="hint">Applied on Restart. Model and optimizer are reinitialized; steps and history reset. Existing run files are retained.</p>
-  </section>
-  <form id="save-form" class="controls" hidden>
-    <label for="save-step">Checkpoint Step</label>
-    <input id="save-step" type="number" min="1" step="1" required>
-    <button id="save-schedule" type="submit">Schedule Checkpoint</button>
-    <button id="save-cancel" type="button" hidden>Cancel Schedule</button>
-  </form>
-  <p id="save-schedule-status" class="hint" role="status"></p>
   <p id="control-message" class="hint" role="status"></p>
   <p id="save-status" class="hint" role="status"></p>
   <dl>
@@ -96,13 +73,29 @@
   <section id="loss-section" hidden>
     <h2>Training History</h2>
     <div id="chart-overview"></div>
+  </section>
+  <details id="training-advanced">
+    <summary>Advanced</summary>
+  <form id="lr-form" class="controls" hidden>
+    <label for="lr-input">Learning rate</label>
+    <input id="lr-input" type="number" step="any" min="0" required>
+    <button id="lr-apply" type="submit">Apply</button>
+    <span id="lr-current" class="hint"></span>
+  </form>
+  <form id="save-form" class="controls" hidden>
+    <label for="save-step">Checkpoint Step</label>
+    <input id="save-step" type="number" min="1" step="1" required>
+    <button id="save-schedule" type="submit">Schedule Checkpoint</button>
+    <button id="save-cancel" type="button" hidden>Cancel Schedule</button>
+  </form>
+  <p id="save-schedule-status" class="hint" role="status"></p>
     <h2>Recent History</h2>
     <div id="chart-recent"></div>
     <p class="hint">Leave bounds empty for autoscaling. Switching an axis resets its bounds. Reloading restores defaults.</p>
-  </section>
+    <p id="capabilities" class="hint"></p>
+  </details>
   <script src="/charts.js"></script>
   <script src="/console.js"></script>
-  <script src="/restart.js"></script>
   <script>
     const byId = id => document.getElementById(id);
     const seconds = value => value == null ? "—" : `${Math.round(value)} s`;
@@ -117,8 +110,6 @@
     const consoleView = createConsoleView();
     // tqdmboard already displays complete process stdout / stderr outside this iframe.
     byId("console-section").hidden = window.self !== window.top;
-    const restartControls = createRestartControls(sendControl);
-    let lastRunId = null;
 
     function updateControls() {
       const ended = !connected || !controlState || controlState.finished || controlState.stop_requested;
@@ -134,11 +125,9 @@
       byId("save-cancel").hidden = controlState?.save_at_step == null;
       byId("save-cancel").disabled = ended || commandBusy;
       byId("pause").textContent = controlState?.pause_requested ? "Resume" : "Pause";
-      restartControls.update(null, connected, commandBusy || pendingCommand?.action === "restart");
     }
 
     async function sendControl(action, value) {
-      const requestedRunId = lastRunId;
       commandBusy = true;
       updateControls();
       try {
@@ -149,7 +138,7 @@
         });
         const result = await response.json();
         if (!response.ok) throw new Error(result.error);
-        pendingCommand = {action, value, runId: requestedRunId};
+        pendingCommand = {action, value};
         byId("control-message").textContent = "Command accepted; pending step boundary.";
       } catch (error) {
         byId("control-message").textContent = error.message;
@@ -192,19 +181,11 @@
         if (!response.ok) throw new Error("Server unavailable");
         const data = await response.json();
         connected = true;
-        if (data.run_id !== lastRunId) {
-          lastRunId = data.run_id;
-          errorShown = false;
-          rateInitialized = false;
-          consoleView.reset();
-          byId("save-step").value = "";
-        }
-        restartControls.update(data, connected, commandBusy);
         controlState = data.control;
         if (!byId("console-section").hidden) consoleView.update(data.console);
         updateControls();
         if (pendingCommand) {
-          const done = pendingCommand.action === "restart" ? (data.run_id !== pendingCommand.runId && !data.restart.pending) : controlState.finished ||
+          const done = controlState.finished ||
             (pendingCommand.action === "pause" && controlState.paused) ||
             (pendingCommand.action === "resume" && !controlState.pause_requested && !controlState.paused) ||
             (pendingCommand.action === "learning_rate" && controlState.pending_learning_rate == null && (controlState.learning_rate === pendingCommand.value || controlState.learning_rate_error)) ||
@@ -212,15 +193,15 @@
             (pendingCommand.action === "schedule_save" && (controlState.save_at_step === pendingCommand.value || controlState.completed >= pendingCommand.value)) ||
             (pendingCommand.action === "cancel_save" && controlState.save_at_step == null);
           if (done) {
-            const messages = {restart: "Restarted with updated hyperparameters.", pause: "Paused.", resume: "Resumed.", stop: "Stopped.", learning_rate: controlState.learning_rate_error ? `Learning rate failed: ${controlState.learning_rate_error}` : "Learning rate applied.", save: controlState.save_error ? "Checkpoint failed." : "Checkpoint saved.", schedule_save: "Checkpoint scheduled.", cancel_save: "Checkpoint schedule canceled."};
+            const messages = {pause: "Paused.", resume: "Resumed.", stop: "Stopped.", learning_rate: controlState.learning_rate_error ? `Learning rate failed: ${controlState.learning_rate_error}` : "Learning rate applied.", save: controlState.save_error ? "Checkpoint failed." : "Checkpoint saved.", schedule_save: "Checkpoint scheduled.", cancel_save: "Checkpoint schedule canceled."};
             byId("control-message").textContent = pendingCommand.action === "save" ? messages.save : controlState.finished ? "Run ended." : messages[pendingCommand.action];
             pendingCommand = null;
           }
         }
         byId("description").textContent = data.description || "Progress";
-        const states = {starting: "Initializing run", restart_requested: "Restart pending", waiting: "Pending", running: "Running", pause_requested: "Pause pending", paused: "Paused", saving: "Saving checkpoint", stop_requested: "Stop pending", stopped: "Stopped", finished: "Completed", failed: "Failed"};
+        const states = {waiting: "Pending", running: "Running", pause_requested: "Pause pending", paused: "Paused", saving: "Saving checkpoint", stop_requested: "Stop pending", stopped: "Stopped", finished: "Completed", failed: "Failed"};
         byId("state").textContent = states[data.state] || data.state;
-        const caps = {...data.control.capabilities, restart: Boolean(data.restart?.enabled)};
+        const caps = data.control.capabilities;
         byId("capabilities").textContent = Object.entries(caps).map(([name, enabled]) => `${name}: ${enabled ? "available" : "unavailable"}`).join(" | ");
         byId("lr-form").hidden = !controlState.capabilities.learning_rate;
         if (data.control.learning_rate != null) {

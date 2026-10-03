@@ -9,11 +9,10 @@
 | `console.js` | 更新 Console Output、Follow Tail 與 Copy Output |
 | `web.py` | Qtqdm 入口，接合 progress、console capture 與 dashboard |
 | `dashboard.py` | 本機 HTTP server，驗證請求後呼叫 state／control callback |
-| `session.py` | 跨 run 的 lifecycle，排程 Restart 並維持同一個 URL |
-| `restart.js` | Restart Hyperparameters 表單與狀態 |
 | `board.py` | tqdmboard App HTTP server，不隨 training process 結束 |
-| `board.html`／`board.js` | Local File Browser 與 launcher UI，嵌入 training dashboard |
-| `board_files.py` | Folder listing、Python environment discovery、arguments／paths 驗證 |
+| `board.html`／`board.js` | Basic／Advanced launcher UI 與原生選檔操作，嵌入 training dashboard |
+| `board_dialog.py` | Windows 原生 file／folder dialogs，取得本機完整路徑 |
+| `board_files.py` | Python environment discovery、arguments／paths 驗證 |
 | `board_process.py` | 啟動、停止、重啟 subprocess，收集原始 stdout／stderr |
 | `board_monitor.py` | 背景採樣 Windows CPU／RAM 與 NVIDIA GPU，供 App 讀取快取 |
 | `resources.js` | 顯示 system resource 數值、unavailable 與 sample age |
@@ -30,9 +29,13 @@
 
 `../tqdmboard.cmd` 呼叫專案 `.venv` 的 Python 執行 `../tqdmboard.py`，進入 `board.py`。App HTTP server 與 Python training subprocess 分開；App 本身只依賴標準函式庫。`board_process.py` 以 shell=False 與獨立 argument list 啟動所選 script，保留 stdin pipe，收集合併的 stdout／stderr。每個 process 建立新 log，網頁只保留 bounded console buffer。
 
-ProcessRunner 發現 `Qtqdm page: http://127.0.0.1:PORT/` 後，App 在 iframe 顯示原 training dashboard，保留既有 controls 與 hyperparameter form。App 透過 `TQDMBOARD=1` 告知 Qtqdm／TrainingSession 不另開分頁，並讓 TrainingSession 在工作完成後繼續等待 Restart。外部 folder 的 scripts 透過 PYTHONPATH 找到 Qtqdm，不需手動修改既有 compliant scripts。
+ProcessRunner 發現 `Qtqdm page: http://127.0.0.1:PORT/` 後，以 iframe 顯示 Qtqdm 的單次 training dashboard。`TQDMBOARD=1` 避免 Qtqdm 另開分頁，GPU 範例在此模式以 `wait()` 保留結束後的畫面。App 透過 PYTHONPATH 讓外部 scripts 找到 Qtqdm。
 
-`Restart Process` 會要求舊 process graceful stop，等待 exit 後才啟動新的 process；`Restart` training action 則由 child TrainingSession 處理。兩者分開，model／optimizer 仍只存在 training process 中。App server 在 child exit 後仍可選擇其他 script。完整使用方式與框架見 `../TQDMBOARD.md`。
+NativePicker 用 Windows PowerShell 的 STA process 開啟系統 OpenFileDialog／FolderBrowserDialog。選取設定透過 stdin JSON 傳遞；回傳完整路徑，Cancel 回傳 null。App 不再提供 folder listing 或網頁 directory tree。只允許一個選擇視窗，App close 時結束自己的 dialog process。
+
+App 的 Basic 是選擇 script、Run／Stop／Quit、Console、Training Dashboard。Advanced 是 environment、working directory、arguments、Restart Process／Force Stop、PID／exit code 與 System Resources。選中的 script 預設以自己的 folder 作 working directory，偵測附近環境。
+
+`Restart Process` 等待舊 process 結束後啟動新的 process。Qtqdm 只監控一次 run；model／optimizer 始終在 script 中。完整使用方式見 `../TQDMBOARD.md`。
 
 ## 執行位置
 
@@ -61,7 +64,6 @@ Python 主執行緒負責訓練，背景 `ThreadingHTTPServer` 負責網頁請�
 | `save` | 不需要 | 在下一個步驟邊界保存，暫停時也能保存 |
 | `schedule_save` | 尚未完成且不超過總目標的整數步數 | 完成指定步數後保存一次；新預訂取代舊預訂 |
 | `cancel_save` | 不需要 | 取消尚未觸發的預訂 |
-| `restart` | hyperparameter JSON object | 由 TrainingSession 接收，結束舊 run 後執行新 run |
 
 網頁執行緒只改控制狀態；optimizer 始終由訓練程式操作。HTTP 接受指令不代表訓練已經執行，因此 `/state` 分別提供暫停要求、已暫停、等待套用的 learning rate 與已生效值。
 
@@ -71,7 +73,7 @@ Python 主執行緒負責訓練，背景 `ThreadingHTTPServer` 負責網頁請�
 
 `checkpoint()` 在 Condition 鎖內取得待處理指令，釋放鎖後執行 callback，再取得鎖回報結果。已暫停时也會被指令喚醒，處理後繼續等待；同一 boundary 先套用 learning rate，再執行保存。Stop 優先取消尚未套用的 learning rate；已排入的保存仍可完成。Callback 發生 Exception 時回報 `learning_rate_error`／`save_error`，不讓一般控制失敗中斷 training；不保證回滾 handler 內部的部分修改。
 
-`/state.control.capabilities` 宣告 pause、stop、save_checkpoint、learning_rate 的支援情況；Restart 仍由 `/state.restart` 決定。網頁顯示支援摘要與 handler 錯誤，並依 run state 停用按鈕。GPU 範例每個新 run 重新註冊自己的 callbacks，沒有跨 run 共用 optimizer。
+`/state.control.capabilities` 宣告 pause、stop、save_checkpoint、learning_rate 的支援情況。網頁顯示支援摘要與 handler 錯誤，並依 run state 停用按鈕。GPU 範例每次 process 執行建立自己的 model、optimizer 與 callbacks。
 
 ## Resource monitoring
 
@@ -81,17 +83,11 @@ GPU 查詢 timeout 為 1.2 秒；driver 缺失、查詢失敗或資料不可用�
 
 Condition 讓暫停的訓練等待通知，不需要持續輪詢。`resume`、`stop` 或工作結束都會通知等待者。結束後拒絕新的控制指令；停止後不能接續同一個迭代器。
 
-## Restart lifecycle
+## Single run lifecycle
 
-`TrainingSession` 持有共用 Dashboard 與目前的 Qtqdm。Restart 先驗證 hyperparameters，再記錄一個 pending request 並要求目前 run 停止；已在排程或初始化時拒絕重複 Restart。訓練 callback 返回後，session 在同一個訓練執行緒呼叫 callback 建立新模型、optimizer 與 Qtqdm，不重用舊 iterator。
+Script 建立 model／optimizer、Qtqdm 與 handlers，然後執行一次迴圈。Qtqdm 拒絕重用同一個 iterator。完成、停止或例外後清除未完成控制，保留讀取用狀態；`wait()` 可保留 page，`close()` 結束 server。
 
-GPU callback 在正常完成或受控停止時寫 checkpoint，Restart 因此先保留舊 run 的 checkpoint／CSV／log。Failed run 保留已寫入檔案與 traceback，但不保證有新的 checkpoint。新 run 使用新檔名並從 step 0 開始；舊 checkpoint 不會自動載入。CLI 的 `--resume` 只用在第一個 run attempt。
-
-`/state` 的 `run_id` 在新 Qtqdm 發布時增加，`restart` 包含 enabled／pending／parameters。前端在 run_id 改變後更新表單初值、重設 console version、error alert 與 LR input。新 Qtqdm 的步數、指標歷史、pause／stop／save 狀態都是獨立資料；dashboard URL 不變。
-
-GPU 範例目前提供四個 Restart Hyperparameters：learning_rate > 0、momentum ∈ [0, 1)、weight_decay ≥ 0、target_steps 為正整數。驗證在伺服器端執行。即時 learning rate 控制仍只修改目前 optimizer；Restart 表單的值僅在下一個 run 生效。每個 run 的模型由固定 seed 42 重建，方便比較不同參數。
-
-`--keep-open` 讓 session 在 Completed／Stopped／Failed 後等待下一個 Restart；Enter 會通知 session 停止並關閉 dashboard。沒有指定時，最後一個 run 返回且沒有待執行 Restart 就退出。
+GPU 範例正常完成或受控停止後保存 checkpoint，失敗保留 traceback 與已寫入紀錄。再次執行由 App 啟動新 process；CLI 的 `--resume` 在該次執行恢復 checkpoint。沒有相同 process 的重新建模或 Restart schema。
 
 ## Console Output
 

@@ -2,7 +2,7 @@
 
 用 Python 包裝一個迴圈，並在本機瀏覽器顯示即時進度。這個版本只用 Python 標準函式庫與原生 HTML／JavaScript，不需要發布套件或安裝網頁框架。
 
-要從同一個 App 選擇不同 Python scripts，請在專案目錄執行 `tqdmboard.cmd`。App 提供 Local File Browser、environment／arguments selection、Process Console 與嵌入式 Training Dashboard；training process 結束後 App 仍運作。詳見 `../TQDMBOARD.md`。
+要從同一個 App 選擇不同 Python scripts，請在專案目錄執行 `tqdmboard.cmd`。App 提供 Windows 原生選檔視窗、Basic／Advanced 分組、environment／arguments selection、Process Console 與嵌入式 Training Dashboard；training process 結束後 App 仍運作。詳見 `../TQDMBOARD.md`。
 
 ## 使用
 
@@ -79,7 +79,6 @@ finally:
 - `control.py`：接收暫停、繼續、停止、learning rate 與保存要求，在迴圈邊界協調執行。
 - `web.py`：Qtqdm 入口，接合 progress、console 與 dashboard。
 - `dashboard.py`：在 `127.0.0.1` 啟動 HTTP server，提供頁面與 `/state` JSON。
-- `session.py`／`restart.js`：維持同一個 URL，協調 Restart 與 hyperparameter 表單。
 - `index.html`：每 250 毫秒讀取 `/state` 並更新畫面。
 
 `with` 可以偵測迴圈內的例外，把狀態改為失敗，並讓頁面彈出錯誤提醒。例外仍會傳回原程式；`finally` 裡的 `wait()` 讓短腳本在失敗時也保留頁面，直到使用者按 Enter。
@@ -141,7 +140,7 @@ with progress:
 
 Qtqdm 自動在 step boundary 呼叫 handler，並回報成功／失敗。已暫停時也能保存與調整 learning rate，保持暫停；stop 已接受後不再執行尚未套用的 learning rate。Handler 在 training thread 執行且不持有控制鎖；慢 handler 會延後下一步，但不鎖住 HTTP server。失敗會顯示原因、保留上次成功回報的值並允許重試；handler 自行造成的部分修改不會自動回滾。
 
-網頁列出 capabilities；未註冊的 Save／Learning Rate controls 不顯示，摘要標示 unavailable。Pause／Stop 是內建功能；Restart 由 `TrainingSession` 提供。Capabilities 表示 script 支援的功能，run 結束後按鈕仍會停用。Model、optimizer 與 checkpoint 內容仍由 script 決定，Qtqdm 不會自動猜測。
+網頁列出 capabilities；未註冊的 Save／Learning Rate controls 不顯示，摘要標示 unavailable。Pause／Stop 是內建功能。每個 Qtqdm 只監控一次 run。Capabilities 表示 script 支援的功能，run 結束後按鈕仍會停用。Model、optimizer 與 checkpoint 內容仍由 script 決定，Qtqdm 不會自動猜測。
 
 控制接入統一使用 `register_controls`。如果自己的舊 script 使用 `enable_saving`、`report_learning_rate` 或 `take_learning_rate`，請改成上述 handler 寫法；這三個舊接口已移除。尚未開始處理的多次 learning-rate 要求以最後一次為準。完成、停止或失敗後，控制按鈕會停用。耗時與平均速度以實際經過的時間計算，包含暫停時間。
 
@@ -170,15 +169,15 @@ Console Output 是 plain text viewer，捕捉 `with` 期間的 Python text strea
 
 同一個 process 僅允許一個啟用 capture 的 monitor。若有其他 monitor，請設 `capture_console=False`。顯示更新以 3 秒內為同步標準，正常連線時仍每 250 ms 輪詢；網頁關閉或斷線不會阻止訓練。
 
-## Restart Hyperparameters
+## 單次執行與介面分組
 
-GPU 範例使用 `TrainingSession`，可在 Running／Paused／Completed／Stopped／Failed 後按 `Restart`。先填寫 `learning_rate`、`momentum`、`weight_decay`、`target_steps`，再按 Restart；表單不會立即更改正在執行的 optimizer。
+每個 Qtqdm instance 僅監控一次 run；完成、停止或失敗後，controls 停用。已移除多次 run 的 session、Training Restart、Restart Hyperparameters 與相同 URL 重建 model 的流程。
 
-Restart 在目前 step 完成後結束舊 run，正常或受控停止的 run 會先保存 checkpoint。新 run 重建模型與 optimizer，步數／指標曲線／console buffer 重新開始，取消舊的 checkpoint schedule，使用新的 CSV／log／checkpoint；原檔案保留，網頁 URL 不變。Failed run 仍可 Restart，先前未保存的權重不會自動恢復。
+Basic 顯示 Progress、Metrics、Pause／Stop、Save Checkpoint、Training History，以及 standalone Console。Advanced 預設收合，包含 Learning Rate、Schedule／Cancel Checkpoint、Recent History、capabilities。每張圖的 Axis Settings 也以 Advanced 收合。
 
-`--keep-open` 讓 Completed／Stopped／Failed 後仍能在同一頁 Restart，Enter 關閉 session。未指定時，工作結束且沒有待執行 Restart 就退出。
+GPU 範例的初始 learning rate、momentum、weight decay 與 target steps 透過啟動 arguments 設定。即時 Learning Rate 控制仍使用註冊 handler。`--keep-open` 只保留完成／停止／失敗的頁面供閱讀，Enter 關閉；在 tqdmboard 內也會保留，直到 Stop Process 或 Restart Process 通知結束。
 
-一般 `Qtqdm` 仍包裝一次迴圈，不會替使用者重建模型。其他訓練程式可匯入 `from qtqdm import TrainingSession`，傳入自己的 parameters、validate callback，並透過 `session.run(train_callback)` 執行；每個 callback 使用 `session.new_progress(...)` 建立新的 Qtqdm，模型與 optimizer 由 callback 重建。完整整合範例見 `gpu_training_demo.py`。
+重新執行由 tqdmboard 的 Restart Process 處理：結束舊 process、啟動新 process。新 Qtqdm 使用新的 URL、CSV／log／checkpoint，舊檔保留。原本使用多次 run session 的 scripts 需改成直接建立 Qtqdm；可執行範例見 `../gpu_training_demo.py`。
 
 ## 測試
 

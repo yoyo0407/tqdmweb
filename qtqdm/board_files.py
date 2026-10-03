@@ -1,4 +1,4 @@
-"""Folder browsing and Python command validation for the local app."""
+"""Python environments and command validation for the local app."""
 
 import ctypes
 import os
@@ -37,21 +37,6 @@ def python_environments(folder):
                 candidates.append(str(executable))
     candidates.append(sys.executable)
     return list(dict.fromkeys(candidates))
-
-
-def browse_folder(path):
-    folder = Path(path).expanduser().resolve(strict=True)
-    if not folder.is_dir():
-        raise ValueError("Choose a directory")
-    entries = []
-    for item in folder.iterdir():
-        if item.name.startswith(".") or item.name == "__pycache__":
-            continue
-        if item.is_dir() or item.suffix.lower() == ".py":
-            entries.append({"name": item.name, "path": str(item), "directory": item.is_dir()})
-    entries.sort(key=lambda item: (not item["directory"], item["name"].lower()))
-    return {"path": str(folder), "parent": str(folder.parent), "entries": entries,
-            "python_environments": python_environments(folder)}
 
 
 def validate_launch(data):

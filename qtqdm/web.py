@@ -12,15 +12,14 @@ from .dashboard import Dashboard
 
 class Qtqdm(Progress):
     def __init__(self, items, total=None, description="", open_browser=True, csv_path=None, initial=0,
-                 capture_console=True, console_path=None, dashboard=None, desc=None):
+                 capture_console=True, console_path=None, desc=None):
         if desc is not None:
             if description:
                 raise ValueError("Use desc or description, not both")
             description = desc
         super().__init__(items, total=total, description=description, csv_path=csv_path, initial=initial)
         self.open_browser = open_browser and os.environ.get("TQDMBOARD") != "1"
-        self._owns_dashboard = dashboard is None
-        self._dashboard = dashboard or Dashboard(self.snapshot, self.control.request)
+        self._dashboard = Dashboard(self.snapshot, self.control.request)
         self.console = ConsoleOutput(console_path)
         self._console_capture = ConsoleCapture(self.console) if capture_console else None
 
@@ -85,8 +84,7 @@ class Qtqdm(Progress):
         self.console.close()
         self.control.finish()
         self._close_log()
-        if self._owns_dashboard:
-            self._dashboard.close()
+        self._dashboard.close()
 
     def wait(self):
         """Keep a short script's dashboard open until Enter is pressed."""

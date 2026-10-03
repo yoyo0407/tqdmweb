@@ -1,7 +1,6 @@
 const byId = id => document.getElementById(id);
 const consoleView = createConsoleView();
 const resourceView = createResourceView();
-let currentFolder = null;
 let detectedPython = null;
 let jobId = null;
 let frameUrl = null;
@@ -11,11 +10,12 @@ let connected = false;
 
 function message(text) { byId("message").textContent = text; }
 function updateButtons() {
-  byId("run").disabled = busy || !connected || lastState?.running;
+  byId("run").disabled = busy || !connected || lastState?.running || !byId("script").value.trim();
   byId("restart-process").disabled = busy || !connected || lastState?.restart_pending;
   byId("stop-process").disabled = busy || !connected || !lastState?.running || lastState?.state === "stopping";
   byId("force-stop").disabled = busy || !connected || !lastState?.running;
-  byId("quit").disabled = busy || !connected;
+  byId("quit").disabled = !connected;
+  for (const id of ["choose-script", "choose-python", "choose-directory"]) byId(id).disabled = busy || !connected;
 }
 
 async function request(url, options) {
@@ -25,35 +25,33 @@ async function request(url, options) {
   return data;
 }
 
-async function browse(path) {
+function updateEnvironments(paths) {
+  byId("environments").replaceChildren();
+  for (const path of paths) {
+    const option = document.createElement("option");
+    option.value = path; byId("environments").append(option);
+  }
+  detectedPython = paths[0] || null;
+}
+
+async function selectPath(kind) {
+  busy = true; updateButtons();
+  message("Select a path in the Windows dialog.");
+  const target = {script: "script", python: "python", directory: "working-directory"}[kind];
   try {
-    const data = await request(`/browse?path=${encodeURIComponent(path)}`);
-    currentFolder = data;
-    byId("directory").value = data.path;
-    byId("files").replaceChildren();
-    for (const entry of data.entries) {
-      const item = document.createElement("li");
-      const button = document.createElement("button");
-      button.type = "button";
-      button.textContent = `${entry.directory ? "[Directory]" : "[Python]"} ${entry.name}`;
-      button.onclick = () => {
-        if (entry.directory) browse(entry.path);
-        else {
-          byId("script").value = entry.path;
-          byId("working-directory").value = data.path;
-          if (detectedPython) byId("python").value = detectedPython;
-          message(`Selected ${entry.name}`);
-        }
-      };
-      item.append(button); byId("files").append(item);
-    }
-    byId("environments").replaceChildren();
-    for (const path of data.python_environments) {
-      const option = document.createElement("option");
-      option.value = path; byId("environments").append(option);
-    }
-    detectedPython = data.python_environments[0] || null;
+    const data = await request("/select-path", {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({kind, initial: byId(target).value || byId("working-directory").value})});
+    if (data.path) {
+      byId(target).value = data.path;
+      if (kind === "script") {
+        byId("working-directory").value = data.working_directory;
+        updateEnvironments(data.python_environments);
+        if (detectedPython) byId("python").value = detectedPython;
+      }
+      message(`Selected ${data.path}`);
+    } else message("Selection canceled.");
   } catch (error) { message(error.message); }
+  finally { busy = false; updateButtons(); }
 }
 
 function launchConfig() {
@@ -70,9 +68,13 @@ async function action(route, data = {}) {
   finally { busy = false; updateButtons(); }
 }
 
-byId("browse-form").onsubmit = event => { event.preventDefault(); browse(byId("directory").value); };
-byId("parent").onclick = () => { if (currentFolder) browse(currentFolder.parent); };
+byId("choose-script").onclick = () => selectPath("script");
+byId("choose-python").onclick = () => selectPath("python");
+byId("choose-directory").onclick = () => selectPath("directory");
 byId("autodetect").onclick = () => { if (detectedPython) byId("python").value = detectedPython; };
+for (const id of ["python", "working-directory"]) {
+  byId(id).addEventListener("invalid", () => { byId("advanced-section").open = true; });
+}
 byId("launch-form").onsubmit = event => { event.preventDefault(); action("/run", launchConfig()); };
 byId("restart-process").onclick = () => {
   if (byId("launch-form").reportValidity() && confirm("Restart the Python process with these launcher settings? Existing logs and files are retained.")) action("/restart", launchConfig());
@@ -90,7 +92,8 @@ async function refresh() {
     if (jobId !== data.job_id) { jobId = data.job_id; consoleView.reset(); }
     consoleView.update(data.console);
     resourceView.update(data.resources);
-    byId("process-status").textContent = `Process ${data.job_id} | ${data.state} | PID: ${data.pid ?? "—"} | Exit code: ${data.exit_code ?? "—"}` + (data.error ? ` | ${data.error}` : "");
+    byId("process-status").textContent = `Process ${data.job_id}: ${data.state}` + (data.error ? ` | ${data.error}` : "");
+    byId("process-details").textContent = `PID: ${data.pid ?? "—"} | Exit code: ${data.exit_code ?? "—"}`;
     const url = data.running ? data.dashboard_url : null;
     byId("training-section").hidden = !url;
     if (url !== frameUrl) {
@@ -115,7 +118,7 @@ async function refresh() {
     byId("python").value = config.python;
     byId("working-directory").value = config.working_directory;
     byId("arguments").value = config.arguments;
-    await browse(data.directory);
+    updateEnvironments(data.python_environments);
   } catch (error) { message(error.message); }
   refresh();
 })();

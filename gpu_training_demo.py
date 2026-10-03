@@ -1,6 +1,7 @@
 """Train a small model on CUDA and display its real loss in Qtqdm."""
 
 import argparse
+import os
 from time import sleep
 from datetime import datetime
 from pathlib import Path
@@ -8,12 +9,13 @@ from pathlib import Path
 import torch
 from torch import nn
 
-from qtqdm.session import TrainingSession
+from qtqdm import Qtqdm
 from training_config import validate_parameters
 from training_checkpoint import load_checkpoint, save_checkpoint
 
 
-def train_run(session, parameters, resume_path=None, override_steps=False, step_delay=0.03):
+def train_run(parameters, resume_path=None, override_steps=False, step_delay=0.03,
+              open_browser=True, keep_open=False):
     device = torch.device("cuda:0")
     torch.manual_seed(42)
 
@@ -26,7 +28,7 @@ def train_run(session, parameters, resume_path=None, override_steps=False, step_
     criterion = nn.MSELoss()
     next_step = 0
     target_steps = parameters["target_steps"]
-    if resume_path is not None and session.run_attempt == 1:
+    if resume_path is not None:
         saved = load_checkpoint(resume_path, model, optimizer)
         next_step = saved["next_step"]
         if not override_steps:
@@ -45,10 +47,10 @@ def train_run(session, parameters, resume_path=None, override_steps=False, step_
                   "momentum": optimizer.param_groups[0]["momentum"],
                   "weight_decay": optimizer.param_groups[0]["weight_decay"],
                   "target_steps": target_steps}
-    progress = session.new_progress(
+    progress = Qtqdm(
         range(next_step, target_steps), description="RTX 5060 training demo",
         total=target_steps, initial=next_step,
-        parameters=parameters, csv_path=csv_path, console_path=console_path,
+        csv_path=csv_path, console_path=console_path, open_browser=open_browser,
     )
 
     def save_now():
@@ -69,7 +71,7 @@ def train_run(session, parameters, resume_path=None, override_steps=False, step_
         with progress:
             print(f"PyTorch: {torch.__version__}; CUDA: {torch.version.cuda}")
             print(f"GPU: {torch.cuda.get_device_name(device)}")
-            print(f"Run ID: {session.run_id}; initial step: {next_step}; target: {target_steps}")
+            print(f"Initial step: {next_step}; target: {target_steps}")
             print(f"Hyperparameters: {parameters}")
             for step in progress:
                 prediction = model(inputs)
@@ -100,7 +102,10 @@ def train_run(session, parameters, resume_path=None, override_steps=False, step_
             print(f"Checkpoint: {checkpoint_path.resolve()}")
             print(f"Saved next step: {next_step}; learning rate: {optimizer.param_groups[0]['lr']}")
     finally:
-        progress.close()
+        if keep_open:
+            progress.wait()
+        else:
+            progress.close()
 
 
 def main():
@@ -124,10 +129,9 @@ def main():
                                       "momentum": args.momentum,
                                       "weight_decay": args.weight_decay,
                                       "target_steps": args.steps or 1000})
-    session = TrainingSession(parameters, validate_parameters)
-    session.run(lambda current, config: train_run(current, config, args.resume,
-                                                  args.steps is not None, args.step_delay),
-                open_browser=not args.no_browser, keep_open=args.keep_open)
+    train_run(parameters, args.resume, args.steps is not None, args.step_delay,
+              open_browser=not args.no_browser,
+              keep_open=args.keep_open or os.environ.get("TQDMBOARD") == "1")
 
 
 if __name__ == "__main__":

@@ -272,7 +272,7 @@ class ControlHttpTests(unittest.TestCase):
             worker.join(timeout=3)
 
     def test_bad_commands_are_rejected(self):
-        for action, value in (("unknown", None), ("learning_rate", -1)):
+        for action, value in (("unknown", None), ("restart", {}), ("learning_rate", -1)):
             with self.assertRaises(HTTPError) as error:
                 self.post(action, value)
             self.assertEqual(error.exception.code, 400)

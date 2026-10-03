@@ -5,11 +5,12 @@ import sys
 from tempfile import TemporaryDirectory
 from time import monotonic, sleep
 import unittest
+from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from qtqdm.board import TqdmBoard
-from qtqdm.board_files import browse_folder, split_arguments
+from qtqdm.board_files import python_environments, split_arguments
 from qtqdm.board_process import ProcessRunner
 
 
@@ -31,14 +32,8 @@ class BoardTests(unittest.TestCase):
         return {"script": str(script), "python": sys.executable,
                 "working_directory": str(self.root), "arguments": arguments}
 
-    def test_file_browser_and_argument_parsing(self):
-        (self.root / "subfolder").mkdir()
-        (self.root / "example.py").write_text("", encoding="utf-8")
-        (self.root / "ignored.txt").write_text("", encoding="utf-8")
-        listing = browse_folder(self.root)
-        self.assertEqual([item["name"] for item in listing["entries"]], ["subfolder", "example.py"])
-        self.assertTrue(listing["entries"][0]["directory"])
-        self.assertIn(sys.executable, listing["python_environments"])
+    def test_environment_discovery_and_argument_parsing(self):
+        self.assertIn(sys.executable, python_environments(self.root))
         if os.name == "nt":
             self.assertEqual(split_arguments('--path "C:\\folder name\\file.py" --text "two words"'),
                              ["--path", "C:\\folder name\\file.py", "--text", "two words"])
@@ -84,19 +79,57 @@ class BoardTests(unittest.TestCase):
         board.runner.project_root = self.root
         self.addCleanup(board.close)
         url = board.start()
-        with urlopen(url + "browse", timeout=3) as response:
-            self.assertEqual(json.load(response)["path"], str(self.root))
+        with urlopen(url + "config", timeout=3) as response:
+            self.assertEqual(json.load(response)["config"]["working_directory"], str(self.root))
         request = Request(url + "run", data=json.dumps(self.config(script)).encode(),
                           headers={"Content-Type": "application/json"})
         with urlopen(request, timeout=3) as response:
             self.assertTrue(json.load(response)["accepted"])
         wait_until(lambda: board.runner.snapshot()["state"] == "exited")
         with urlopen(url, timeout=3) as response:
-            self.assertIn(b"Local File Browser", response.read())
+            self.assertIn(b"Choose Script...", response.read())
         malicious = Request(url + "run", data=b"{}", headers={"Content-Type": "application/json", "Origin": "https://example.com"})
         with self.assertRaises(HTTPError) as error:
             urlopen(malicious, timeout=3)
         self.assertEqual(error.exception.code, 403)
+
+    def test_native_script_selection_and_cancel_through_http(self):
+        script = self.root / "測試 script.py"
+        script.write_text("print('selected')", encoding="utf-8")
+        board = TqdmBoard(self.root)
+        self.addCleanup(board.close)
+        url = board.start()
+        def select():
+            request = Request(url + "select-path", data=json.dumps({"kind": "script"}).encode(),
+                              headers={"Content-Type": "application/json"})
+            with urlopen(request, timeout=3) as response:
+                return json.load(response)
+        with patch.object(board.picker, "pick", return_value=str(script)):
+            result = select()
+            self.assertEqual(result["path"], str(script))
+            self.assertEqual(result["working_directory"], str(self.root))
+            self.assertIn(sys.executable, result["python_environments"])
+        with patch.object(board.picker, "pick", return_value=None):
+            self.assertIsNone(select()["path"])
+        with self.assertRaises(HTTPError) as error:
+            urlopen(url + "browse", timeout=3)
+        self.assertEqual(error.exception.code, 404)
+
+    def test_stop_during_initialization_reaches_late_dashboard(self):
+        script = self.root / "initialize.py"
+        script.write_text("from time import sleep\nfrom qtqdm import Qtqdm\n"
+                          "print('initializing',flush=True)\nsleep(0.2)\n"
+                          "p=Qtqdm(range(1000),open_browser=False)\n"
+                          "with p:\n    for step in p:\n        sleep(0.001)\n"
+                          "print('result='+p.state,flush=True)\np.wait()\n", encoding="utf-8")
+        runner = ProcessRunner(Path.cwd())
+        self.addCleanup(runner.close)
+        runner.start(self.config(script))
+        wait_until(lambda: "initializing" in runner.snapshot()["console"]["text"])
+        self.assertIsNone(runner.snapshot()["dashboard_url"])
+        runner.stop()
+        wait_until(lambda: runner.snapshot()["state"] == "exited")
+        self.assertIn("result=stopped", runner.snapshot()["console"]["text"])
 
 
 if __name__ == "__main__":

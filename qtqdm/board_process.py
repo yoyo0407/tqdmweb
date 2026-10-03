@@ -95,15 +95,18 @@ class ProcessRunner:
             dashboard_url = self.dashboard_url
         Thread(target=self._stop_gracefully, args=(process, dashboard_url), daemon=True).start()
 
+    def _request_training_stop(self, dashboard_url):
+        request = Request(dashboard_url + "control", data=json.dumps({"action": "stop"}).encode(),
+                          headers={"Content-Type": "application/json"})
+        try:
+            with urlopen(request, timeout=1):
+                pass
+        except (URLError, OSError):
+            pass
+
     def _stop_gracefully(self, process, dashboard_url):
         if dashboard_url:
-            request = Request(dashboard_url + "control", data=json.dumps({"action": "stop"}).encode(),
-                              headers={"Content-Type": "application/json"})
-            try:
-                with urlopen(request, timeout=1):
-                    pass
-            except (URLError, OSError):
-                pass
+            self._request_training_stop(dashboard_url)
         try:
             process.stdin.write(b"\n")
             process.stdin.flush()
@@ -147,9 +150,13 @@ class ProcessRunner:
             tail = (tail + text)[-2048:]
             match = re.search(r"Qtqdm page: (http://127\.0\.0\.1:\d+/)", tail)
             if match:
+                stop_after_initialization = False
                 with self._lock:
                     if self._process is process:
+                        stop_after_initialization = self.dashboard_url is None and self.state == "stopping"
                         self.dashboard_url = match.group(1)
+                if stop_after_initialization:
+                    Thread(target=self._request_training_stop, args=(match.group(1),), daemon=True).start()
         remaining = decoder.decode(b"", final=True)
         if remaining:
             output.write(remaining)

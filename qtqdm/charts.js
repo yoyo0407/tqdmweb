@@ -2,6 +2,7 @@
 function createChart(containerId, historyKind) {
   const container = document.getElementById(containerId);
   container.innerHTML = `
+    <details class="chart-advanced"><summary>Axis Settings (Advanced)</summary>
     <form class="chart-settings">
       <div class="axis-row">
         <label>X Axis <select name="x"><option value="2">Step</option><option value="0">Elapsed Time</option><option value="3">Update Index</option></select></label>
@@ -15,7 +16,7 @@ function createChart(containerId, historyKind) {
       </div>
       <div class="axis-row"><button type="submit">Apply Axes</button><button type="button" class="chart-reset">Reset Axes</button></div>
       <p class="chart-error" role="status"></p>
-    </form>
+    </form></details>
     <canvas width="640" height="280" role="img"></canvas>
     <p class="chart-caption hint" role="status"></p>`;
 

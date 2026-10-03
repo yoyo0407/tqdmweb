@@ -20,10 +20,9 @@
 | 功能 | 用途與保留理由 |
 | --- | --- |
 | Run、script／environment／arguments／working directory | 決定執行什麼程式、使用哪個 Python，以及相對路徑的基準 |
-| File Browser、Parent Directory、environment discovery | 在網頁選擇本機 scripts；environment 按鈕可恢復偵測到的選項 |
+| 原生 file／folder dialogs、environment discovery | 使用 Windows 選擇視窗取得本機路徑；environment 按鈕可恢復偵測到的選項 |
 | Restart Process | 重新載入修改後的 script 或啟動 arguments |
-| Training Restart 與 Hyperparameters | 在同一個 training process 重建 model／optimizer，保留 dashboard URL |
-| Training Stop 與 Stop Process | 前者结束本次 run 並保留 session；後者關閉 child process，釋放 launcher |
+| Training Stop 與 Stop Process | 前者結束本次 run，保留頁面供閱讀；後者關閉 child process，釋放 launcher |
 | Pause／Resume | 在 step boundary 暫停與繼續同一個 run |
 | Force Stop | 處理沒有完成 graceful stop 的 process，確保 Windows venv child interpreter 一併結束 |
 | Save、Schedule、Cancel Schedule | 立即請求保存、在指定完成步數保存，以及取消未觸發預訂 |
@@ -47,3 +46,7 @@
 目前 `gpu_training_demo.py` 與 `example.py` 可以直接執行。外部舊 script 若使用三個已移除的控制方法，需要依 `qtqdm/README.md` 改用 `register_controls`。外部 state reader 若讀取已移除的 loss／saving 欄位，需要改用統一格式。這次沒有修改保存檔格式。
 
 確認同時保存與調參時，learning-rate handler 先執行，再保存 checkpoint；停用手動輪詢模式後，也保留對此行為的測試。
+
+## 最新調整
+
+Qtqdm 已改成單次 run；移除 session 與 Training Restart。網頁自製 folder browser 改為 Windows 原生選擇視窗。Board 與 Dashboard 依 Basic／Advanced 分組，Advanced 預設收合。啟動參數和 Restart Process 仍屬 Board 的 process 管理。

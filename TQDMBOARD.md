@@ -26,31 +26,26 @@ PowerShell 使用：
 
 `--directory "C:\path\to\project"` 可指定初始 folder；`--port 8765` 指定固定 port；`--no-browser` 不自動開啟瀏覽器。
 
-## 使用
+## Basic
 
-1. 在 Local File Browser 輸入 Directory，按 Browse；點選 folder 進入，或點選 `.py` script。
-2. 選擇 Python Executable。App 會列出附近的 `.venv`／`venv` 與目前 Python；也可手動填入 executable 完整路徑。
-3. Working Directory 預設為 script 所在 folder。相對資料路徑與 script 的輸出檔案會以它為基準。
-4. Arguments 使用原本 command-line 格式，例如 `--steps 100 --learning-rate 0.03`。含空白的單一 argument 請使用引號。
-5. 按 Run。Process Console 顯示 stdout／stderr，完整 process log 存在 App 專案的 `runs/tqdmboard/`。
+1. 按 Choose Script，使用 Windows 原生選檔視窗選擇 `.py`。Cancel 保留目前設定。
+2. Script 所在 folder 自動成為 Working Directory，並偵測附近 Python environment。
+3. 按 Run；Basic 顯示 process state、stdout／stderr 與 Qtqdm Training Dashboard。
+4. Stop Process 結束 child process；Quit App 關閉 App。Script 結束後 App 仍可選擇下一個 script。
 
-同時管理一個 process。App 使用 argument list 與 `shell=False` 啟動，Arguments 不會交給 CMD 執行；像 `&` 的內容會當成 argument。
+Process Console 提供 Follow Tail、Copy Output，完整 log 存在 `runs/tqdmboard/`。一般 Python script 也能執行；training controls 需要 script 接入 Qtqdm。
 
-## Process 與 Training 控制
+## Advanced
 
-| 控制 | 行為 |
-| --- | --- |
-| Run | 啟動所選 script 與 Python environment |
-| Stop Process | 要求 Qtqdm 停止，並通知 script 的 stdin 結束等待；正常流程可先保存 checkpoint |
-| Restart Process | 先停止舊 process，再以目前 launcher settings 啟動新 process；重新載入 script 程式碼 |
-| Force Stop | 立即終止目前 Python process，不保證產生新的 checkpoint |
-| Training Dashboard 的 Restart | 在同一個 training process 內，使用 Restart Hyperparameters 重建 model／optimizer |
+Advanced 預設收合，包含 Python Executable、Working Directory、Arguments、Restart Process、Force Stop、PID／exit code 和 System Resources。Choose Python／Choose Directory 同樣開啟系統視窗；也可手動填入這兩個欄位。
 
-Running process 不能再次按 Run。若 graceful stop 尚未完成，App 會顯示 Stopping，並允許使用者選擇 Force Stop；不會因為顯示更新而要求 training 等待瀏覽器。
+Arguments 使用原本 command-line 格式，例如 `--steps 100 --learning-rate 0.03 --momentum 0.6`。App 以 argument list 和 shell=False 啟動，含空白的單一 argument 使用引號。
 
-Qtqdm-compatible script 會自動出現在 Training Dashboard iframe 中。App 設定 `PYTHONPATH` 讓外部 folder 的 scripts 找到目前 Qtqdm，並設定 `TQDMBOARD=1`，避免額外開啟 browser tab。`TrainingSession` 在 App 模式會保持開啟，因此 Completed／Stopped／Failed 後仍可調整 hyperparameters 再 Restart，不需要額外加 `--keep-open`。
+Restart Process 先要求舊 script 停止，等 exit 後以現在的 launcher settings 啟動新 process，重新載入程式碼。Force Stop 立即終止 process tree，不保證保存新的 checkpoint。沒有 Qtqdm 內部的 Training Restart 或 hyperparameter 重啟表單。
 
-既有 `gpu_training_demo.py` 與 `example.py` 可直接選擇執行，這一步沒有要求使用者手動修改 script。tqdm static converter 尚未實作；目前前提仍是 training script 已符合 Qtqdm API。一般 `.py` 也能 Run 與顯示 Console，但沒有 Qtqdm dashboard 時不會出現 training controls。
+Qtqdm-compatible script 自動出現在 iframe。App 設定 PYTHONPATH 讓外部 scripts 找到 Qtqdm，並設定 TQDMBOARD=1 避免額外開啟 browser tab。GPU 範例保持完成／停止後的頁面供閱讀；下一次執行由 Board 啟動新 process。
+
+Training Dashboard 的 Basic 是 progress、metrics、Pause／Stop、手動 Save 和全程 history；Advanced 是 learning rate、checkpoint schedule、recent history 和 capabilities。Axis Settings 各自收合。App iframe 使用外層 Process Console，Open Dashboard 的獨立頁面另有 Python Console。
 
 ## Code architecture
 
@@ -58,12 +53,13 @@ Qtqdm-compatible script 會自動出現在 Training Dashboard iframe 中。App �
 tqdmboard.cmd / tqdmboard.py
     └─ TqdmBoard (board.py): app HTTP server
          ├─ board.html / board.js: launcher UI
-         ├─ board_files.py: folder browser / environments / arguments
+         ├─ NativePicker (board_dialog.py): Windows file / folder dialog
+         ├─ board_files.py: environments / arguments
          ├─ ResourceMonitor (board_monitor.py): CPU / RAM / GPU sampling
          └─ ProcessRunner (board_process.py): subprocess lifecycle
               ├─ ConsoleOutput: stdout + stderr + persistent process log
               └─ selected Python script
-                   └─ Qtqdm / TrainingSession
+                   └─ Qtqdm (single run)
                         └─ Dashboard / model / optimizer / checkpoint
 ```
 
@@ -91,4 +87,4 @@ App 顯示整台電腦的 CPU utilization、已用／總 RAM，以及 NVIDIA GPU
 & '.\.venv\Scripts\python.exe' -m unittest discover -s tests -v
 ```
 
-測試涵蓋 folder listing、Windows argument quoting、空白路徑、working directory、stdout／stderr、process exit／restart／force stop，以及 training session 的既有 controls。網頁測試另驗證外部 script integration、RTX 5060 訓練、Training Restart 與 Restart Process。
+測試涵蓋 native dialog initialization／selection／Cancel、Windows argument quoting、空白路徑、working directory、stdout／stderr、process exit／restart／force stop、初始化期間的 Stop，以及單次 training controls。網頁測試另驗證 RTX 5060 訓練、Basic／Advanced、單次 Qtqdm 與 Restart Process。
