@@ -59,6 +59,7 @@ tqdmboard.cmd / tqdmboard.py
     └─ TqdmBoard (board.py): app HTTP server
          ├─ board.html / board.js: launcher UI
          ├─ board_files.py: folder browser / environments / arguments
+         ├─ ResourceMonitor (board_monitor.py): CPU / RAM / GPU sampling
          └─ ProcessRunner (board_process.py): subprocess lifecycle
               ├─ ConsoleOutput: stdout + stderr + persistent process log
               └─ selected Python script
@@ -69,6 +70,20 @@ tqdmboard.cmd / tqdmboard.py
 App 與 training 使用不同 process；App 不存取 model／optimizer。它管理 Python executable、script、arguments、cwd、stdin／stdout，以及 process lifecycle。Training script 仍負責模型與訓練，既有 Qtqdm APIs 負責 training controls。
 
 ProcessRunner 透過 Qtqdm 印出的 loopback URL 找到 child dashboard，前端直接顯示 iframe；沒有新增必須手動接入的 IPC schema。這是本機單 process launcher，不是 job queue，也不是 terminal emulator。Windows 的 Force Stop 會終止所啟動的 process tree，包含 `.venv` redirector 建立的 child interpreter；不會管理 script 自行建立的獨立服務。
+
+## System Resources
+
+App 顯示整台電腦的 CPU utilization、已用／總 RAM，以及 NVIDIA GPU utilization、已用／總 VRAM。數值包含其他應用程式，不代表所選 training process 的獨占用量；不必修改 training script。
+
+`board_monitor.py` 的背景 thread 約每秒採樣一次，HTTP 只讀快取，不會為了查詢 GPU 阻塞網頁或訓練。Windows CPU／RAM 使用系統 API，GPU 使用 driver 隨附的 `nvidia-smi`；不需安裝 psutil 或 NVML Python module。CPU 初次採樣需等待第二組 counters 才能計算 utilization。
+
+每次 GPU 查詢最多等待 1.2 秒，失敗或找不到 nvidia-smi 時標示 unavailable，CPU／RAM 仍更新。頁面顯示 Sample age，超過 3 秒標示 stale。關閉 App 會停止採樣 thread。CPU／RAM 採樣目前支援 Windows；monitor 不保存 resource history。
+
+## Script 接入
+
+基本使用 `with Qtqdm(items, desc="Training") as progress:`，再以 `set_postfix` 回報 metrics。需要 Save／Learning Rate 時，使用 `progress.register_controls(...)` 提供 handlers 與目前 learning rate；迴圈不必自己檢查請求。接口與範例詳見 `qtqdm/README.md`，GPU 範例已改用新接口。
+
+此次完成基本接入、統一控制接口與外部 resource monitoring；依目前決定，不加入 tqdm static converter。
 
 ## 驗證
 

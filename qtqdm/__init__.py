@@ -3,4 +3,6 @@
 from .web import Qtqdm
 from .session import TrainingSession
 
-__all__ = ["Qtqdm", "TrainingSession"]
+tqdm = Qtqdm
+
+__all__ = ["Qtqdm", "tqdm", "TrainingSession"]

@@ -42,6 +42,7 @@
   <h1 id="description">Progress</h1>
   <div id="state">Waiting...</div>
   <p id="run-id" class="hint"></p>
+  <p id="capabilities" class="hint"></p>
   <progress id="bar"></progress>
   <div class="controls">
     <button id="pause" type="button">Pause</button>
@@ -204,12 +205,12 @@
           const done = pendingCommand.action === "restart" ? (data.run_id !== pendingCommand.runId && !data.restart.pending) : controlState.finished ||
             (pendingCommand.action === "pause" && controlState.paused) ||
             (pendingCommand.action === "resume" && !controlState.pause_requested && !controlState.paused) ||
-            (pendingCommand.action === "learning_rate" && controlState.pending_learning_rate == null && controlState.learning_rate === pendingCommand.value) ||
+            (pendingCommand.action === "learning_rate" && controlState.pending_learning_rate == null && (controlState.learning_rate === pendingCommand.value || controlState.learning_rate_error)) ||
             (pendingCommand.action === "save" && !controlState.save_requested && !controlState.saving && (controlState.last_checkpoint || controlState.save_error)) ||
             (pendingCommand.action === "schedule_save" && (controlState.save_at_step === pendingCommand.value || controlState.completed >= pendingCommand.value)) ||
             (pendingCommand.action === "cancel_save" && controlState.save_at_step == null);
           if (done) {
-            const messages = {restart: "Restarted with updated hyperparameters.", pause: "Paused.", resume: "Resumed.", stop: "Stopped.", learning_rate: "Learning rate applied.", save: controlState.save_error ? "Checkpoint failed." : "Checkpoint saved.", schedule_save: "Checkpoint scheduled.", cancel_save: "Checkpoint schedule canceled."};
+            const messages = {restart: "Restarted with updated hyperparameters.", pause: "Paused.", resume: "Resumed.", stop: "Stopped.", learning_rate: controlState.learning_rate_error ? `Learning rate failed: ${controlState.learning_rate_error}` : "Learning rate applied.", save: controlState.save_error ? "Checkpoint failed." : "Checkpoint saved.", schedule_save: "Checkpoint scheduled.", cancel_save: "Checkpoint schedule canceled."};
             byId("control-message").textContent = pendingCommand.action === "save" ? messages.save : controlState.finished ? "Run ended." : messages[pendingCommand.action];
             pendingCommand = null;
           }
@@ -217,6 +218,8 @@
         byId("description").textContent = data.description || "Progress";
         const states = {starting: "Initializing run", restart_requested: "Restart pending", waiting: "Pending", running: "Running", pause_requested: "Pause pending", paused: "Paused", saving: "Saving checkpoint", stop_requested: "Stop pending", stopped: "Stopped", finished: "Completed", failed: "Failed"};
         byId("state").textContent = states[data.state] || data.state;
+        const caps = {...data.control.capabilities, restart: Boolean(data.restart?.enabled)};
+        byId("capabilities").textContent = Object.entries(caps).map(([name, enabled]) => `${name}: ${enabled ? "available" : "unavailable"}`).join(" | ");
         // A loop only exposes LR controls after reporting its optimizer's value.
         byId("lr-form").hidden = data.control.learning_rate == null;
         if (data.control.learning_rate != null) {
@@ -225,7 +228,8 @@
             rateInitialized = true;
           }
           byId("lr-current").textContent = `Current: ${data.control.learning_rate}` +
-            (data.control.pending_learning_rate == null ? "" : `; Pending: ${data.control.pending_learning_rate}`);
+            (data.control.pending_learning_rate == null ? "" : `; Pending: ${data.control.pending_learning_rate}`) +
+            (data.control.learning_rate_error ? `; Error: ${data.control.learning_rate_error}` : "");
         }
         byId("state").classList.toggle("failed", data.state === "failed");
         byId("save-status").textContent = data.control.saving ? "Writing checkpoint..." :

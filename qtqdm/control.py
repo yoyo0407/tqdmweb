@@ -13,6 +13,8 @@ class TrainingControl:
         self._finished = False
         self._pending_learning_rate = None
         self._learning_rate = None
+        self._rate_handler = None
+        self._rate_error = None
         self._save_handler = None
         self._save_requested = False
         self._saving = False
@@ -65,6 +67,7 @@ class TrainingControl:
                 if self._learning_rate is None:
                     raise ValueError("This training loop has not enabled learning-rate control")
                 self._pending_learning_rate = value
+                self._rate_error = None
             self._condition.notify_all()
             return True
 
@@ -74,6 +77,24 @@ class TrainingControl:
             raise TypeError("Save handler must be callable")
         with self._condition:
             self._save_handler = handler
+
+    def register_controls(self, *, save_checkpoint=None, set_learning_rate=None, learning_rate=None):
+        """Register callbacks before iteration; each runs on the training thread."""
+        for handler in (save_checkpoint, set_learning_rate):
+            if handler is not None and not callable(handler):
+                raise TypeError("Control handlers must be callable")
+        if set_learning_rate is not None:
+            if (isinstance(learning_rate, bool) or not isinstance(learning_rate, (int, float))
+                    or not isfinite(learning_rate) or learning_rate <= 0):
+                raise ValueError("Provide the current finite positive learning_rate")
+        elif learning_rate is not None:
+            raise ValueError("learning_rate requires set_learning_rate")
+        with self._condition:
+            if save_checkpoint is not None:
+                self._save_handler = save_checkpoint
+            if set_learning_rate is not None:
+                self._rate_handler = set_learning_rate
+                self._learning_rate = learning_rate
 
     def configure_steps(self, completed, total):
         with self._condition:
@@ -93,11 +114,17 @@ class TrainingControl:
                 if self._save_at_step is not None and self._completed >= self._save_at_step:
                     self._save_requested = True
                     self._save_at_step = None
-                if self._save_requested:
+                if self._pending_learning_rate is not None and self._rate_handler is not None and not self._stop_requested:
+                    rate = self._pending_learning_rate
+                    self._pending_learning_rate = None
+                    handler = self._rate_handler
+                    operation = "learning_rate"
+                elif self._save_requested:
                     self._save_requested = False
                     self._saving = True
                     self._save_error = None
                     handler = self._save_handler
+                    operation = "save"
                 elif final or self._stop_requested or not self._pause_requested:
                     self._paused = False
                     if final:
@@ -107,18 +134,32 @@ class TrainingControl:
                     self._condition.wait()
                     continue
 
-            # File I/O runs outside the lock so the web server remains responsive.
+            # Callbacks run outside the lock so the web server remains responsive.
             try:
-                path = str(handler())
+                if operation == "learning_rate":
+                    handler(rate)
+                else:
+                    path = handler()
+                    if path is None:
+                        raise ValueError("Checkpoint handler must return its file path")
+                    path = str(path)
             except Exception as error:
                 with self._condition:
-                    self._save_error = f"{type(error).__name__}: {error}"
+                    if operation == "learning_rate":
+                        self._rate_error = f"{type(error).__name__}: {error}"
+                    else:
+                        self._save_error = f"{type(error).__name__}: {error}"
             else:
                 with self._condition:
-                    self._last_checkpoint = path
+                    if operation == "learning_rate":
+                        self._learning_rate = rate
+                        self._rate_error = None
+                    else:
+                        self._last_checkpoint = path
             finally:
                 with self._condition:
-                    self._saving = False
+                    if operation == "save":
+                        self._saving = False
                     self._condition.notify_all()
 
     def take_learning_rate(self):
@@ -150,6 +191,10 @@ class TrainingControl:
                 "finished": self._finished,
                 "learning_rate": self._learning_rate,
                 "pending_learning_rate": self._pending_learning_rate,
+                "learning_rate_error": self._rate_error,
+                "capabilities": {"pause": True, "stop": True,
+                                 "save_checkpoint": self._save_handler is not None,
+                                 "learning_rate": self._learning_rate is not None},
                 "saving_enabled": self._save_handler is not None,
                 "save_requested": self._save_requested,
                 "saving": self._saving,

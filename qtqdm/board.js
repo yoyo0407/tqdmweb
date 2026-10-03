@@ -1,5 +1,6 @@
 const byId = id => document.getElementById(id);
 const consoleView = createConsoleView();
+const resourceView = createResourceView();
 let currentFolder = null;
 let detectedPython = null;
 let jobId = null;
@@ -88,6 +89,7 @@ async function refresh() {
     connected = true; lastState = data;
     if (jobId !== data.job_id) { jobId = data.job_id; consoleView.reset(); }
     consoleView.update(data.console);
+    resourceView.update(data.resources);
     byId("process-status").textContent = `Process ${data.job_id} | ${data.state} | PID: ${data.pid ?? "—"} | Exit code: ${data.exit_code ?? "—"}` + (data.error ? ` | ${data.error}` : "");
     const url = data.running ? data.dashboard_url : null;
     byId("training-section").hidden = !url;

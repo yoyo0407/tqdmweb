@@ -11,6 +11,7 @@ import webbrowser
 
 from .board_files import browse_folder
 from .board_process import ProcessRunner
+from .board_monitor import ResourceMonitor
 
 
 class TqdmBoard:
@@ -18,6 +19,7 @@ class TqdmBoard:
         self.project_root = Path(__file__).resolve().parent.parent
         self.directory = Path(directory or self.project_root).resolve(strict=True)
         self.runner = ProcessRunner(self.project_root)
+        self.monitor = ResourceMonitor()
         self.closed = Event()
         self.server = None
         self.port = port
@@ -26,6 +28,7 @@ class TqdmBoard:
     def start(self):
         board = self
         assets = {"/": ("board.html", "text/html"), "/board.js": ("board.js", "text/javascript"),
+                  "/resources.js": ("resources.js", "text/javascript"),
                   "/console.js": ("console.js", "text/javascript")}
         files = {route: (Path(__file__).with_name(name).read_bytes(), kind) for route, (name, kind) in assets.items()}
 
@@ -55,7 +58,7 @@ class TqdmBoard:
                     if route.path in files:
                         self.respond(*files[route.path])
                     elif route.path == "/state":
-                        self.respond_json(board.runner.snapshot())
+                        self.respond_json({**board.runner.snapshot(), "resources": board.monitor.snapshot()})
                     elif route.path == "/browse":
                         path = parse_qs(route.query).get("path", [str(board.directory)])[0]
                         self.respond_json(browse_folder(path))
@@ -107,6 +110,7 @@ class TqdmBoard:
 
         self.server = ThreadingHTTPServer(("127.0.0.1", self.port), Handler)
         self.url = f"http://127.0.0.1:{self.server.server_port}/"
+        self.monitor.start()
         Thread(target=self.server.serve_forever, daemon=True).start()
         print(f"tqdmboard: {self.url}", flush=True)
         return self.url
@@ -116,6 +120,7 @@ class TqdmBoard:
         try:
             self.runner.close()
         finally:
+            self.monitor.close()
             if self.server is not None:
                 self.server.shutdown()
                 self.server.server_close()

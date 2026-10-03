@@ -49,6 +49,14 @@
   <p id="message" role="status"></p>
   <p id="process-status" class="hint"></p>
   <section>
+    <h2>System Resources</h2>
+    <p class="hint">System-wide usage, including other applications. Sampled independently of training.</p>
+    <p id="resource-cpu">CPU: Waiting...</p>
+    <p id="resource-ram">RAM: Waiting...</p>
+    <div id="resource-gpus"></div>
+    <p id="resource-status" class="hint" role="status"></p>
+  </section>
+  <section>
     <h2>Process Console</h2>
     <div class="controls">
       <label><input id="console-follow" type="checkbox" checked> Follow Tail</label>
@@ -65,6 +73,7 @@
     <iframe id="training-frame" title="Qtqdm training dashboard" allow="clipboard-read; clipboard-write"></iframe>
   </section>
   <script src="/console.js"></script>
+  <script src="/resources.js"></script>
   <script src="/board.js"></script>
 </body>
 </html>

@@ -40,8 +40,17 @@ class Progress:
         self.control.configure_steps(initial, total)
         self._csv_log = CsvLog(csv_path) if csv_path is not None else None
 
-    def set_postfix(self, **values):
+    def register_controls(self, *, save_checkpoint=None, set_learning_rate=None, learning_rate=None):
+        """Keep model-specific code in the script, not in the web server."""
+        if self.started_at is not None:
+            raise RuntimeError("Register controls before starting the loop")
+        self.control.register_controls(save_checkpoint=save_checkpoint,
+                                       set_learning_rate=set_learning_rate, learning_rate=learning_rate)
+        return self
+
+    def set_postfix(self, ordered_dict=None, refresh=True, **values):
         """Display named values such as loss or accuracy on the page."""
+        values = {**(ordered_dict or {}), **values}
         elapsed = 0 if self.started_at is None else monotonic() - self.started_at
         if self._csv_log is not None and values:
             self._csv_log.write(elapsed, self.started, values)

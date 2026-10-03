@@ -15,6 +15,8 @@
 | `board.html`／`board.js` | Local File Browser 與 launcher UI，嵌入 training dashboard |
 | `board_files.py` | Folder listing、Python environment discovery、arguments／paths 驗證 |
 | `board_process.py` | 啟動、停止、重啟 subprocess，收集原始 stdout／stderr |
+| `board_monitor.py` | 背景採樣 Windows CPU／RAM 與 NVIDIA GPU，供 App 讀取快取 |
+| `resources.js` | 顯示 system resource 數值、unavailable 與 sample age |
 | `control.py` | 使用 Condition 協調網頁執行緒與訓練執行緒 |
 | `progress.py` | 計數、歷史取樣，每一步開始前檢查控制狀態 |
 | `csv_log.py` | 保存完整指標更新 |
@@ -62,6 +64,20 @@ Python 主執行緒負責訓練，背景 `ThreadingHTTPServer` 負責網頁請�
 | `restart` | hyperparameter JSON object | 由 TrainingSession 接收，結束舊 run 後執行新 run |
 
 網頁執行緒只改控制狀態；optimizer 始終由訓練程式操作。HTTP 接受指令不代表訓練已經執行，因此 `/state` 分別提供暫停要求、已暫停、等待套用的 learning rate 與已生效值。
+
+## Registered controls
+
+`Progress.register_controls` 是公開入口，轉交 `TrainingControl.register_controls`。Script 提供 `save_checkpoint()` 與 `set_learning_rate(value)`，後者同時提供初始 learning rate；函式不直接依賴 PyTorch。Qtqdm 在下一個 step boundary 自動呼叫已註冊 handler，將結果寫回 control state，不需在 training loop 使用 `take_learning_rate`。舊的手動接口保留。
+
+`checkpoint()` 在 Condition 鎖內取得待處理指令，釋放鎖後執行 callback，再取得鎖回報結果。已暫停时也會被指令喚醒，處理後繼續等待；同一 boundary 先套用 learning rate，再執行保存。Stop 優先取消尚未套用的 learning rate；已排入的保存仍可完成。Callback 發生 Exception 時回報 `learning_rate_error`／`save_error`，不讓一般控制失敗中斷 training；不保證回滾 handler 內部的部分修改。
+
+`/state.control.capabilities` 宣告 pause、stop、save_checkpoint、learning_rate 的支援情況；Restart 仍由 `/state.restart` 決定。網頁顯示支援摘要與 handler 錯誤，並依 run state 停用按鈕。GPU 範例每個新 run 重新註冊自己的 callbacks，沒有跨 run 共用 optimizer。
+
+## Resource monitoring
+
+`TqdmBoard` 持有與 training subprocess 分開的 `ResourceMonitor`。它用背景 thread 約每秒呼叫 Windows GetSystemTimes／GlobalMemoryStatusEx 與 nvidia-smi，使用 Lock 更新快取；`GET /state` 合併 runner snapshot 和 resources snapshot。前端 `resources.js` 只呈現數值，不向 training 發送同步要求。
+
+GPU 查詢 timeout 為 1.2 秒；driver 缺失、查詢失敗或資料不可用時顯示錯誤／null，不沿用舊 GPU 數值。`sampled_at` 記錄採樣開始的 Unix timestamp，前端以它計算 sample age，超過 3 秒標記 stale。所有用量為 system-wide，CPU／RAM 目前限定 Windows。App close 會通知 sampler 結束並等待 thread 返回。
 
 Condition 讓暫停的訓練等待通知，不需要持續輪詢。`resume`、`stop` 或工作結束都會通知等待者。結束後拒絕新的控制指令；停止後不能接續同一個迭代器。
 

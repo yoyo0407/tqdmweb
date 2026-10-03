@@ -3,7 +3,7 @@ from time import sleep
 from qtqdm import Qtqdm
 
 
-progress = Qtqdm(range(20), description="Example task")
+progress = Qtqdm(range(20), desc="Example task")
 try:
     with progress:
         for item in progress:

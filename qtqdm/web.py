@@ -12,7 +12,11 @@ from .dashboard import Dashboard
 
 class Qtqdm(Progress):
     def __init__(self, items, total=None, description="", open_browser=True, csv_path=None, initial=0,
-                 capture_console=True, console_path=None, dashboard=None):
+                 capture_console=True, console_path=None, dashboard=None, desc=None):
+        if desc is not None:
+            if description:
+                raise ValueError("Use desc or description, not both")
+            description = desc
         super().__init__(items, total=total, description=description, csv_path=csv_path, initial=initial)
         self.open_browser = open_browser and os.environ.get("TQDMBOARD") != "1"
         self._owns_dashboard = dashboard is None

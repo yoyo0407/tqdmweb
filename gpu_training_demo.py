@@ -50,7 +50,6 @@ def train_run(session, parameters, resume_path=None, override_steps=False, step_
         total=target_steps, initial=next_step,
         parameters=parameters, csv_path=csv_path, console_path=console_path,
     )
-    progress.control.report_learning_rate(optimizer.param_groups[0]["lr"])
 
     def save_now():
         name = f"{run_path.name}_step_{next_step:06d}_{datetime.now():%H%M%S_%f}.pt"
@@ -59,7 +58,13 @@ def train_run(session, parameters, resume_path=None, override_steps=False, step_
         print(f"Checkpoint saved: {path.resolve()}", flush=True)
         return path.resolve()
 
-    progress.control.enable_saving(save_now)
+    def set_learning_rate(value):
+        for group in optimizer.param_groups:
+            group["lr"] = value
+        print(f"Learning rate applied: {value}", flush=True)
+
+    progress.register_controls(save_checkpoint=save_now, set_learning_rate=set_learning_rate,
+                               learning_rate=optimizer.param_groups[0]["lr"])
     try:
         with progress:
             print(f"PyTorch: {torch.__version__}; CUDA: {torch.version.cuda}")
@@ -67,12 +72,6 @@ def train_run(session, parameters, resume_path=None, override_steps=False, step_
             print(f"Run ID: {session.run_id}; initial step: {next_step}; target: {target_steps}")
             print(f"Hyperparameters: {parameters}")
             for step in progress:
-                new_rate = progress.control.take_learning_rate()
-                if new_rate is not None:
-                    for group in optimizer.param_groups:
-                        group["lr"] = new_rate
-                    progress.control.report_learning_rate(new_rate)
-                    print(f"Learning rate applied: {new_rate}", flush=True)
                 prediction = model(inputs)
                 loss = criterion(prediction, targets)
                 if not torch.isfinite(loss).item():
