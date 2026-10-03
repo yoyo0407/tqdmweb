@@ -2,3 +2,10 @@ __pycache__/
 *.pyc
 .venv/
 runs/
+
+# Personal documents (kept outside the repo)
+*.docx
+*.pdf
+履歷*
+Resume*
+build_resume*.py
