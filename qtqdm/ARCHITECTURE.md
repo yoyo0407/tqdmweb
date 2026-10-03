@@ -10,7 +10,9 @@
 | `web.py` | Qtqdm 入口，接合 progress、console capture 與 dashboard |
 | `dashboard.py` | 本機 HTTP server，驗證請求後呼叫 state／control callback |
 | `board.py` | tqdmboard App HTTP server，不隨 training process 結束 |
-| `board.html`／`board.js` | Basic／Advanced launcher UI 與原生選檔操作，嵌入 training dashboard |
+| `board.html`／`board.js` | Basic／Advanced launcher UI 與原生選檔操作，自行呈現 training data 與 controls |
+| `board_training.py` | 背景讀取 training state、保留快取、驗證 job_id 並轉送 controls |
+| `training_view.js` | 兩個頁面共用的 progress／metrics／controls rendering behavior |
 | `board_dialog.py` | Windows 原生 file／folder dialogs，取得本機完整路徑 |
 | `board_files.py` | Python environment discovery、arguments／paths 驗證 |
 | `board_process.py` | 啟動、停止、重啟 subprocess，收集原始 stdout／stderr |
@@ -29,11 +31,11 @@
 
 `../tqdmboard.cmd` 呼叫專案 `.venv` 的 Python 執行 `../tqdmboard.py`，進入 `board.py`。App HTTP server 與 Python training subprocess 分開；App 本身只依賴標準函式庫。`board_process.py` 以 shell=False 與獨立 argument list 啟動所選 script，保留 stdin pipe，收集合併的 stdout／stderr。每個 process 建立新 log，網頁只保留 bounded console buffer。
 
-ProcessRunner 發現 `Qtqdm page: http://127.0.0.1:PORT/` 後，以 iframe 顯示 Qtqdm 的單次 training dashboard。`TQDMBOARD=1` 避免 Qtqdm 另開分頁，GPU 範例在此模式以 `wait()` 保留結束後的畫面。App 透過 PYTHONPATH 讓外部 scripts 找到 Qtqdm。
+ProcessRunner 發現 `Qtqdm page: http://127.0.0.1:PORT/` 後，由 TrainingBridge 背景讀取 child `/state`。Board 的 `/state` 合併 process、resources 和 training 快取，自己的 HTML／JS 呈現 training data；沒有 iframe。Board `/training-control` 檢查 job_id，再轉送至 child `/control`。讀取 timeout 為 1 秒，快取失敗或超過 3 秒停用 controls；HTTP state 請求不等待 child 回應。新 process 清除舊快取，退出後保留最後收到的資料。`TQDMBOARD=1` 避免 Qtqdm 另開分頁，GPU 範例在此模式以 `wait()` 保留結束後的畫面。App 透過 PYTHONPATH 讓外部 scripts 找到 Qtqdm。
 
 NativePicker 用 Windows PowerShell 的 STA process 開啟系統 OpenFileDialog／FolderBrowserDialog。選取設定透過 stdin JSON 傳遞；回傳完整路徑，Cancel 回傳 null。App 不再提供 folder listing 或網頁 directory tree。只允許一個選擇視窗，App close 時結束自己的 dialog process。
 
-App 的 Basic 是選擇 script、Run／Stop／Quit、Console、Training Dashboard。Advanced 是 environment、working directory、arguments、Restart Process／Force Stop、PID／exit code 與 System Resources。選中的 script 預設以自己的 folder 作 working directory，偵測附近環境。
+App 的 Basic 是選擇 script、Run／Stop／Quit、Console、Training Dashboard。Advanced 是 learning rate、checkpoint schedule、recent chart、overview axis settings、capabilities，以及 environment、working directory、arguments、Restart Process／Force Stop、PID／exit code 與 System Resources。內部 Qtqdm page 不分 Basic／Advanced。選中的 script 預設以自己的 folder 作 working directory，偵測附近環境。
 
 `Restart Process` 等待舊 process 結束後啟動新的 process。Qtqdm 只監控一次 run；model／optimizer 始終在 script 中。完整使用方式見 `../TQDMBOARD.md`。
 

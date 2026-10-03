@@ -40,7 +40,6 @@
 <body>
   <h1 id="description">Progress</h1>
   <div id="state">Waiting...</div>
-  <h2>Basic</h2>
   <progress id="bar"></progress>
   <div class="controls">
     <button id="pause" type="button">Pause</button>
@@ -74,8 +73,6 @@
     <h2>Training History</h2>
     <div id="chart-overview"></div>
   </section>
-  <details id="training-advanced">
-    <summary>Advanced</summary>
   <form id="lr-form" class="controls" hidden>
     <label for="lr-input">Learning rate</label>
     <input id="lr-input" type="number" step="any" min="0" required>
@@ -93,170 +90,28 @@
     <div id="chart-recent"></div>
     <p class="hint">Leave bounds empty for autoscaling. Switching an axis resets its bounds. Reloading restores defaults.</p>
     <p id="capabilities" class="hint"></p>
-  </details>
   <script src="/charts.js"></script>
   <script src="/console.js"></script>
+  <script src="/training_view.js"></script>
   <script>
-    const byId = id => document.getElementById(id);
-    const seconds = value => value == null ? "—" : `${Math.round(value)} s`;
-    let errorShown = false;
-    let controlState = null;
-    let commandBusy = false;
-    let connected = false;
-    let rateInitialized = false;
-    let pendingCommand = null;
-    const overviewChart = createChart("chart-overview", "overview");
-    const recentChart = createChart("chart-recent", "recent");
     const consoleView = createConsoleView();
-    // tqdmboard already displays complete process stdout / stderr outside this iframe.
-    byId("console-section").hidden = window.self !== window.top;
-
-    function updateControls() {
-      const ended = !connected || !controlState || controlState.finished || controlState.stop_requested;
-      byId("pause").disabled = ended || commandBusy;
-      byId("stop").disabled = ended || commandBusy;
-      byId("lr-apply").disabled = ended || commandBusy;
-      byId("lr-input").disabled = ended;
-      byId("save").hidden = !controlState?.capabilities.save_checkpoint;
-      byId("save").disabled = ended || commandBusy || controlState?.save_requested || controlState?.saving;
-      byId("save-form").hidden = !controlState?.capabilities.save_checkpoint;
-      byId("save-step").disabled = ended;
-      byId("save-schedule").disabled = ended || commandBusy;
-      byId("save-cancel").hidden = controlState?.save_at_step == null;
-      byId("save-cancel").disabled = ended || commandBusy;
-      byId("pause").textContent = controlState?.pause_requested ? "Resume" : "Pause";
-    }
-
-    async function sendControl(action, value) {
-      commandBusy = true;
-      updateControls();
-      try {
-        const response = await fetch("/control", {
-          method: "POST",
-          headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({action, value}),
-        });
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error);
-        pendingCommand = {action, value};
-        byId("control-message").textContent = "Command accepted; pending step boundary.";
-      } catch (error) {
-        byId("control-message").textContent = error.message;
-      } finally {
-        commandBusy = false;
-        updateControls();
-      }
-    }
-
-    byId("pause").onclick = () => sendControl(controlState.pause_requested ? "resume" : "pause");
-    byId("save").onclick = () => sendControl("save");
-    byId("save-cancel").onclick = () => sendControl("cancel_save");
-    byId("save-form").onsubmit = event => {
-      event.preventDefault();
-      const step = Number(byId("save-step").value);
-      if (!Number.isInteger(step) || step <= controlState.completed ||
-          (controlState.total != null && step > controlState.total)) {
-        byId("control-message").textContent = "Checkpoint step must be a future integer within the training target.";
-        return;
-      }
-      sendControl("schedule_save", step);
-    };
-    byId("stop").onclick = () => {
-      if (confirm("Stop this run? CSV records are retained. Resume training requires a new run.")) sendControl("stop");
-    };
-    byId("lr-form").onsubmit = event => {
-      event.preventDefault();
-      const value = Number(byId("lr-input").value);
-      if (!Number.isFinite(value) || value <= 0) {
-        byId("control-message").textContent = "Learning rate must be finite and greater than zero.";
-        return;
-      }
-      sendControl("learning_rate", value);
-    };
-    updateControls();
-
+    const trainingView = createTrainingView({send: async (action, value) => {
+      const response = await fetch("/control", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action, value})});
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error);
+    }});
     async function refresh() {
       try {
         const response = await fetch("/state", {cache: "no-store"});
         if (!response.ok) throw new Error("Server unavailable");
         const data = await response.json();
-        connected = true;
-        controlState = data.control;
-        if (!byId("console-section").hidden) consoleView.update(data.console);
-        updateControls();
-        if (pendingCommand) {
-          const done = controlState.finished ||
-            (pendingCommand.action === "pause" && controlState.paused) ||
-            (pendingCommand.action === "resume" && !controlState.pause_requested && !controlState.paused) ||
-            (pendingCommand.action === "learning_rate" && controlState.pending_learning_rate == null && (controlState.learning_rate === pendingCommand.value || controlState.learning_rate_error)) ||
-            (pendingCommand.action === "save" && !controlState.save_requested && !controlState.saving && (controlState.last_checkpoint || controlState.save_error)) ||
-            (pendingCommand.action === "schedule_save" && (controlState.save_at_step === pendingCommand.value || controlState.completed >= pendingCommand.value)) ||
-            (pendingCommand.action === "cancel_save" && controlState.save_at_step == null);
-          if (done) {
-            const messages = {pause: "Paused.", resume: "Resumed.", stop: "Stopped.", learning_rate: controlState.learning_rate_error ? `Learning rate failed: ${controlState.learning_rate_error}` : "Learning rate applied.", save: controlState.save_error ? "Checkpoint failed." : "Checkpoint saved.", schedule_save: "Checkpoint scheduled.", cancel_save: "Checkpoint schedule canceled."};
-            byId("control-message").textContent = pendingCommand.action === "save" ? messages.save : controlState.finished ? "Run ended." : messages[pendingCommand.action];
-            pendingCommand = null;
-          }
-        }
-        byId("description").textContent = data.description || "Progress";
-        const states = {waiting: "Pending", running: "Running", pause_requested: "Pause pending", paused: "Paused", saving: "Saving checkpoint", stop_requested: "Stop pending", stopped: "Stopped", finished: "Completed", failed: "Failed"};
-        byId("state").textContent = states[data.state] || data.state;
-        const caps = data.control.capabilities;
-        byId("capabilities").textContent = Object.entries(caps).map(([name, enabled]) => `${name}: ${enabled ? "available" : "unavailable"}`).join(" | ");
-        byId("lr-form").hidden = !controlState.capabilities.learning_rate;
-        if (data.control.learning_rate != null) {
-          if (!rateInitialized) {
-            byId("lr-input").value = data.control.learning_rate;
-            rateInitialized = true;
-          }
-          byId("lr-current").textContent = `Current: ${data.control.learning_rate}` +
-            (data.control.pending_learning_rate == null ? "" : `; Pending: ${data.control.pending_learning_rate}`) +
-            (data.control.learning_rate_error ? `; Error: ${data.control.learning_rate_error}` : "");
-        }
-        byId("state").classList.toggle("failed", data.state === "failed");
-        byId("save-status").textContent = data.control.saving ? "Writing checkpoint..." :
-          data.control.save_requested ? "Checkpoint pending step boundary." :
-          data.control.save_error ? `Checkpoint failed: ${data.control.save_error}` :
-          data.control.last_checkpoint ? `Checkpoint saved: ${data.control.last_checkpoint}` : "";
-        byId("save-schedule-status").textContent = data.control.save_at_step == null ? "" : `Checkpoint scheduled after step ${data.control.save_at_step}.`;
-        byId("started").textContent = data.total == null
-          ? `${data.started} / unknown`
-          : `${data.started} / ${data.total}`;
-        byId("completed").textContent = data.completed;
-        byId("rate").textContent = data.rate ? `${data.rate.toFixed(1)} items/s` : "—";
-        byId("elapsed").textContent = seconds(data.elapsed);
-        byId("remaining").textContent = data.state === "paused" ? "Paused" : seconds(data.remaining);
-        const bar = byId("bar");
-        if (data.total == null) bar.removeAttribute("value");
-        else { bar.max = Math.max(data.total, 1); bar.value = data.started; }
-        const metrics = byId("metrics");
-        metrics.replaceChildren();
-        for (const [name, value] of Object.entries(data.metrics)) {
-          const box = document.createElement("div");
-          const label = document.createElement("dt");
-          const number = document.createElement("dd");
-          label.textContent = name;
-          number.textContent = value;
-          box.append(label, number);
-          metrics.append(box);
-        }
-        byId("metrics-section").hidden = Object.keys(data.metrics).length === 0;
-        byId("loss-section").hidden = Object.keys(data.charts).length === 0;
-        overviewChart.update(data.charts);
-        recentChart.update(data.charts);
-        if (data.state === "failed" && !errorShown) {
-          errorShown = true;
-          alert(data.error || "The task failed.");
-        }
+        consoleView.update(data.console);
+        trainingView.update(data, true);
       } catch (error) {
-        connected = false;
-        updateControls();
-        byId("state").textContent = "Disconnected";
-      } finally {
-        setTimeout(refresh, 250);
-      }
+        trainingView.update(null, false);
+        document.getElementById("state").textContent = "Disconnected";
+      } finally { setTimeout(refresh, 250); }
     }
-
     refresh();
   </script>
 </body>

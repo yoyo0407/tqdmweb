@@ -30,29 +30,31 @@ PowerShell 使用：
 
 1. 按 Choose Script，使用 Windows 原生選檔視窗選擇 `.py`。Cancel 保留目前設定。
 2. Script 所在 folder 自動成為 Working Directory，並偵測附近 Python environment。
-3. 按 Run；Basic 顯示 process state、stdout／stderr 與 Qtqdm Training Dashboard。
+3. 按 Run；Basic 顯示 process state、stdout／stderr、progress、metrics、Training History，以及 Pause／Stop／Save Checkpoint。
 4. Stop Process 結束 child process；Quit App 關閉 App。Script 結束後 App 仍可選擇下一個 script。
 
 Process Console 提供 Follow Tail、Copy Output，完整 log 存在 `runs/tqdmboard/`。一般 Python script 也能執行；training controls 需要 script 接入 Qtqdm。
 
 ## Advanced
 
-Advanced 預設收合，包含 Python Executable、Working Directory、Arguments、Restart Process、Force Stop、PID／exit code 和 System Resources。Choose Python／Choose Directory 同樣開啟系統視窗；也可手動填入這兩個欄位。
+Advanced 預設收合，包含 Python Executable、Working Directory、Arguments、Restart Process、Force Stop、PID／exit code 和 System Resources；training 的 Learning Rate、Checkpoint Schedule、Recent History、capabilities 與 Training History Axes 也放在此處。Choose Python／Choose Directory 同樣開啟系統視窗；也可手動填入這兩個欄位。
 
 Arguments 使用原本 command-line 格式，例如 `--steps 100 --learning-rate 0.03 --momentum 0.6`。App 以 argument list 和 shell=False 啟動，含空白的單一 argument 使用引號。
 
 Restart Process 先要求舊 script 停止，等 exit 後以現在的 launcher settings 啟動新 process，重新載入程式碼。Force Stop 立即終止 process tree，不保證保存新的 checkpoint。沒有 Qtqdm 內部的 Training Restart 或 hyperparameter 重啟表單。
 
-Qtqdm-compatible script 自動出現在 iframe。App 設定 PYTHONPATH 讓外部 scripts 找到 Qtqdm，並設定 TQDMBOARD=1 避免額外開啟 browser tab。GPU 範例保持完成／停止後的頁面供閱讀；下一次執行由 Board 啟動新 process。
+Qtqdm-compatible script 的狀態由 Board 自己的 UI 顯示。App 設定 PYTHONPATH 讓外部 scripts 找到 Qtqdm，並設定 TQDMBOARD=1 避免額外開啟 browser tab。GPU 範例保持完成／停止後的頁面供閱讀；下一次執行由 Board 啟動新 process。
 
-Training Dashboard 的 Basic 是 progress、metrics、Pause／Stop、手動 Save 和全程 history；Advanced 是 learning rate、checkpoint schedule、recent history 和 capabilities。Axis Settings 各自收合。App iframe 使用外層 Process Console，Open Dashboard 的獨立頁面另有 Python Console。
+只有外部 Board 分成 Basic／Advanced。內部 Qtqdm 獨立頁面直接呈現所有功能，不分組；兩個頁面共用 rendering behavior 與 chart code，各自擁有 markup、layout 和資料入口。Board 沒有 iframe，Process Console 顯示完整 child stdout／stderr。
 
 ## Code architecture
 
 ```text
 tqdmboard.cmd / tqdmboard.py
     └─ TqdmBoard (board.py): app HTTP server
-         ├─ board.html / board.js: launcher UI
+         ├─ board.html / board.js: launcher + training UI
+         ├─ training_view.js / charts.js: shared rendering behavior
+         ├─ TrainingBridge (board_training.py): training state cache / controls
          ├─ NativePicker (board_dialog.py): Windows file / folder dialog
          ├─ board_files.py: environments / arguments
          ├─ ResourceMonitor (board_monitor.py): CPU / RAM / GPU sampling
@@ -65,7 +67,7 @@ tqdmboard.cmd / tqdmboard.py
 
 App 與 training 使用不同 process；App 不存取 model／optimizer。它管理 Python executable、script、arguments、cwd、stdin／stdout，以及 process lifecycle。Training script 仍負責模型與訓練，既有 Qtqdm APIs 負責 training controls。
 
-ProcessRunner 透過 Qtqdm 印出的 loopback URL 找到 child dashboard，前端直接顯示 iframe；沒有新增必須手動接入的 IPC schema。這是本機單 process launcher，不是 job queue，也不是 terminal emulator。Windows 的 Force Stop 會終止所啟動的 process tree，包含 `.venv` redirector 建立的 child interpreter；不會管理 script 自行建立的獨立服務。
+ProcessRunner 透過 Qtqdm 印出的 loopback URL 找到 child dashboard。TrainingBridge 在背景每 250 ms 讀取其 `/state`，Board `/state` 合併 process、resources 與 training 快取；前端不跨 port 存取子頁面。Board `/training-control` 驗證 job_id 後轉送至 child `/control`，不需要 script 加入新接口。更換 process 清空 training 快取和 chart settings；process 結束後保留最後收到的資料，停用 controls。讀取 timeout 為 1 秒，資料超過 3 秒或讀取失敗時停用 controls。這是本機單 process launcher，不是 job queue，也不是 terminal emulator。Windows 的 Force Stop 會終止所啟動的 process tree，包含 `.venv` redirector 建立的 child interpreter；不會管理 script 自行建立的獨立服務。
 
 ## System Resources
 
@@ -87,4 +89,4 @@ App 顯示整台電腦的 CPU utilization、已用／總 RAM，以及 NVIDIA GPU
 & '.\.venv\Scripts\python.exe' -m unittest discover -s tests -v
 ```
 
-測試涵蓋 native dialog initialization／selection／Cancel、Windows argument quoting、空白路徑、working directory、stdout／stderr、process exit／restart／force stop、初始化期間的 Stop，以及單次 training controls。網頁測試另驗證 RTX 5060 訓練、Basic／Advanced、單次 Qtqdm 與 Restart Process。
+測試涵蓋 native dialog initialization／selection／Cancel、Windows argument quoting、空白路徑、working directory、stdout／stderr、process exit／restart／force stop、初始化期間的 Stop，以及單次 training controls、control relay、child HTTP errors、stale job 拒絕、斷線資料保留和慢回應的隔離。網頁測試另驗證 RTX 5060 訓練、Basic／Advanced、單次 Qtqdm 與 Restart Process。

@@ -3,7 +3,9 @@ const consoleView = createConsoleView();
 const resourceView = createResourceView();
 let detectedPython = null;
 let jobId = null;
-let frameUrl = null;
+const trainingView = createTrainingView({prefix: "training-", settingsContainer: "training-overview-settings",
+  send: (action, value) => request("/training-control", {method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({job_id: jobId, action, value})})});
 let busy = false;
 let lastState = null;
 let connected = false;
@@ -89,20 +91,20 @@ async function refresh() {
   try {
     const data = await request("/state");
     connected = true; lastState = data;
-    if (jobId !== data.job_id) { jobId = data.job_id; consoleView.reset(); }
+    if (jobId !== data.job_id) { jobId = data.job_id; consoleView.reset(); trainingView.reset(); }
     consoleView.update(data.console);
     resourceView.update(data.resources);
     byId("process-status").textContent = `Process ${data.job_id}: ${data.state}` + (data.error ? ` | ${data.error}` : "");
     byId("process-details").textContent = `PID: ${data.pid ?? "—"} | Exit code: ${data.exit_code ?? "—"}`;
-    const url = data.running ? data.dashboard_url : null;
-    byId("training-section").hidden = !url;
-    if (url !== frameUrl) {
-      frameUrl = url;
-      byId("training-frame").src = url || "about:blank";
-      byId("dashboard-link").href = url || "#";
+    byId("training-section").hidden = !data.training.data;
+    byId("training-settings").hidden = !data.training.data;
+    trainingView.update(data.training.data, data.training.connected);
+    if (data.training.data && data.running && !data.training.connected) {
+      byId("training-state").textContent = "Training disconnected; showing last received state.";
     }
   } catch (error) {
     connected = false;
+    trainingView.update(null, false);
     byId("process-status").textContent = "App disconnected. Reopen tqdmboard to continue.";
   } finally {
     updateButtons();

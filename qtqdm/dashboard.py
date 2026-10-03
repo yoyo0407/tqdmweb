@@ -20,6 +20,7 @@ class Dashboard:
         dashboard = self
         page = Path(__file__).with_name("index.html").read_bytes()
         charts_script = Path(__file__).with_name("charts.js").read_bytes()
+        training_script = Path(__file__).with_name("training_view.js").read_bytes()
         console_script = Path(__file__).with_name("console.js").read_bytes()
 
         class Handler(BaseHTTPRequestHandler):
@@ -41,6 +42,8 @@ class Dashboard:
                     content, kind = charts_script, "text/javascript; charset=utf-8"
                 elif self.path == "/console.js":
                     content, kind = console_script, "text/javascript; charset=utf-8"
+                elif self.path == "/training_view.js":
+                    content, kind = training_script, "text/javascript; charset=utf-8"
                 elif self.path == "/state":
                     content = json.dumps(dashboard.get_state()).encode("utf-8")
                     kind = "application/json; charset=utf-8"

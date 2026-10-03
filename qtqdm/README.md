@@ -2,7 +2,7 @@
 
 用 Python 包裝一個迴圈，並在本機瀏覽器顯示即時進度。這個版本只用 Python 標準函式庫與原生 HTML／JavaScript，不需要發布套件或安裝網頁框架。
 
-要從同一個 App 選擇不同 Python scripts，請在專案目錄執行 `tqdmboard.cmd`。App 提供 Windows 原生選檔視窗、Basic／Advanced 分組、environment／arguments selection、Process Console 與嵌入式 Training Dashboard；training process 結束後 App 仍運作。詳見 `../TQDMBOARD.md`。
+要從同一個 App 選擇不同 Python scripts，請在專案目錄執行 `tqdmboard.cmd`。App 提供 Windows 原生選檔視窗、Basic／Advanced 分組、environment／arguments selection、Process Console 與由 App 自行呈現的 Training Dashboard；training process 結束後 App 仍運作。詳見 `../TQDMBOARD.md`。
 
 ## 使用
 
@@ -150,7 +150,7 @@ Qtqdm 自動在 step boundary 呼叫 handler，並回報成功／失敗。已暫
 
 `with progress:` 內的 Python `print()`、寫入 `sys.stdout`／`sys.stderr` 的內容會同時出現在原本終端機與網頁。離開 `with` 會恢復原始 stream；如果發生例外，網頁也保留 traceback。
 
-在 tqdmboard 的 iframe 中，Dashboard 隱藏重複的 Console Output，使用 App 的 Process Console。獨立開啟 Dashboard 時仍顯示 Console Output；Python capture 與 log 保存照常執行。
+tqdmboard 的 Process Console 顯示完整 child stdout／stderr；Board 不嵌入 Qtqdm 頁面。Qtqdm 的獨立頁面始終顯示自己的 Console Output，Python capture 與 log 保存照常執行。
 
 ```python
 progress = Qtqdm(range(100), console_path="training.log")
@@ -173,7 +173,7 @@ Console Output 是 plain text viewer，捕捉 `with` 期間的 Python text strea
 
 每個 Qtqdm instance 僅監控一次 run；完成、停止或失敗後，controls 停用。已移除多次 run 的 session、Training Restart、Restart Hyperparameters 與相同 URL 重建 model 的流程。
 
-Basic 顯示 Progress、Metrics、Pause／Stop、Save Checkpoint、Training History，以及 standalone Console。Advanced 預設收合，包含 Learning Rate、Schedule／Cancel Checkpoint、Recent History、capabilities。每張圖的 Axis Settings 也以 Advanced 收合。
+Qtqdm 獨立頁面直接顯示 Progress、Metrics、Pause／Stop、Save Checkpoint、Console、Training History、Learning Rate、Schedule／Cancel Checkpoint、Recent History、capabilities 與 Axis Settings，不分 Basic／Advanced。只有外部 tqdmboard 使用 Basic／Advanced layout。
 
 GPU 範例的初始 learning rate、momentum、weight decay 與 target steps 透過啟動 arguments 設定。即時 Learning Rate 控制仍使用註冊 handler。`--keep-open` 只保留完成／停止／失敗的頁面供閱讀，Enter 關閉；在 tqdmboard 內也會保留，直到 Stop Process 或 Restart Process 通知結束。
 

@@ -11,7 +11,7 @@
 | 舊的手動控制接口 | `enable_saving`、`take_learning_rate`、`report_learning_rate` 在產品範例中已沒有呼叫，只有測試和舊文件使用 | 移除這三個方法，控制統一使用 `register_controls`；同步遷移測試與文件 |
 | Loss 專用回傳格式 | 前端圖表只讀 `charts`，但後端另回傳內容重複的 `loss_recent`／`loss_overview` | 移除專用欄位，統一讀 `charts.loss.recent`／`overview` |
 | 保存啟用欄位 | `saving_enabled` 與 `capabilities.save_checkpoint` 使用相同判斷 | 刪除前者，前端和測試共用 capabilities |
-| App 內的兩個 Console | Process Console 已顯示完整 child stdout／stderr，iframe 又顯示 Python capture | 嵌入時隱藏 Dashboard Console 並停止更新它；獨立頁面仍提供 Console，capture 與 log 保存照常執行 |
+| App 內的兩個 Console | Process Console 已顯示完整 child stdout／stderr | 移除 iframe；Board 自行顯示 training data，只保留 Process Console。Qtqdm 獨立頁面仍提供 Console，capture 與 log 保存照常執行 |
 
 以 1,000 次 loss 更新的獨立 Progress snapshot 作示例，移除重複 loss 欄位後，JSON 大小約從 55.6 KB 降至 32.1 KB，減少約 42%。實際差異取決於 history、metrics 與 Console 的大小。
 
@@ -49,4 +49,4 @@
 
 ## 最新調整
 
-Qtqdm 已改成單次 run；移除 session 與 Training Restart。網頁自製 folder browser 改為 Windows 原生選擇視窗。Board 與 Dashboard 依 Basic／Advanced 分組，Advanced 預設收合。啟動參數和 Restart Process 仍屬 Board 的 process 管理。
+Qtqdm 已改成單次 run；移除 session 與 Training Restart。網頁自製 folder browser 改為 Windows 原生選擇視窗。只有 Board 依 Basic／Advanced 分組，Advanced 預設收合；Qtqdm page 不分組。Board 使用自身 UI 顯示 training state，由 TrainingBridge 提供資料與 control relay。啟動參數和 Restart Process 仍屬 Board 的 process 管理。

@@ -16,7 +16,18 @@
     .hint { font-size: 0.85rem; color: #59636e; overflow-wrap: anywhere; }
     #console-output { max-height: 280px; min-height: 100px; overflow: auto; border: 1px solid #b8c2cc; padding: 12px; font: 13px/1.5 monospace; white-space: pre; }
     #message, #process-status { min-height: 1.2em; overflow-wrap: anywhere; }
-    iframe { width: 100%; height: 80vh; min-height: 600px; border: 1px solid #b8c2cc; box-sizing: border-box; }
+    progress { width: 100%; height: 24px; }
+    dl { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; }
+    dt { color: #59636e; }
+    dd { margin: 0 0 12px; font-variant-numeric: tabular-nums; }
+    canvas { width: 100%; height: auto; border: 1px solid #d8dee4; border-radius: 6px; }
+    .chart-settings { padding: 12px; background: #f5f7fa; border-radius: 6px; margin: 12px 0; }
+    .axis-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 8px 0; }
+    .axis-row label { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; }
+    .axis-row input { width: 92px; }
+    .axis-row select { width: 138px; }
+    .chart-error { color: #b42318; font-size: 0.85rem; margin: 8px 0 0; }
+    .chart-caption { overflow-wrap: anywhere; }
   </style>
 </head>
 <body>
@@ -44,13 +55,57 @@
       <pre id="console-output" role="log" aria-label="Process stdout and stderr" tabindex="0">Waiting for stdout / stderr...</pre>
     </section>
     <section id="training-section" hidden>
-      <h2>Training Dashboard</h2>
-      <a id="dashboard-link" target="_blank" rel="noopener">Open Dashboard</a>
-      <iframe id="training-frame" title="Qtqdm training dashboard" allow="clipboard-read; clipboard-write"></iframe>
+  <h1 id="training-description">Progress</h1>
+  <div id="training-state">Waiting...</div>
+  <progress id="training-bar"></progress>
+  <div class="controls">
+    <button id="training-pause" type="button">Pause</button>
+    <button id="training-stop" type="button">Stop</button>
+    <button id="training-save" type="button" hidden>Save Checkpoint</button>
+  </div>
+  <p id="training-control-message" class="hint" role="status"></p>
+  <p id="training-save-status" class="hint" role="status"></p>
+  <dl>
+    <div><dt>Progress</dt><dd id="training-started">0</dd></div>
+    <div><dt>Completed</dt><dd id="training-completed">0</dd></div>
+    <div><dt>Rate</dt><dd id="training-rate">—</dd></div>
+    <div><dt>Elapsed</dt><dd id="training-elapsed">0 s</dd></div>
+    <div><dt>Remaining</dt><dd id="training-remaining">—</dd></div>
+  </dl>
+  <section id="training-metrics-section" hidden>
+    <h2>Metrics</h2>
+    <dl id="training-metrics"></dl>
+  </section>
+  <section id="training-loss-section" hidden>
+    <h2>Training History</h2>
+    <div id="training-chart-overview"></div>
+  </section>
     </section>
   </section>
   <details id="advanced-section">
     <summary>Advanced</summary>
+    <section id="training-settings" hidden>
+      <h2>Training Settings</h2>
+  <form id="training-lr-form" class="controls" hidden>
+    <label for="training-lr-input">Learning rate</label>
+    <input id="training-lr-input" type="number" step="any" min="0" required>
+    <button id="training-lr-apply" type="submit">Apply</button>
+    <span id="training-lr-current" class="hint"></span>
+  </form>
+  <form id="training-save-form" class="controls" hidden>
+    <label for="training-save-step">Checkpoint Step</label>
+    <input id="training-save-step" type="number" min="1" step="1" required>
+    <button id="training-save-schedule" type="submit">Schedule Checkpoint</button>
+    <button id="training-save-cancel" type="button" hidden>Cancel Schedule</button>
+  </form>
+  <p id="training-save-schedule-status" class="hint" role="status"></p>
+    <h2>Recent History</h2>
+    <div id="training-chart-recent"></div>
+    <p class="hint">Leave bounds empty for autoscaling. Switching an axis resets its bounds. Reloading restores defaults.</p>
+    <p id="training-capabilities" class="hint"></p>
+      <h2>Training History Axes</h2>
+      <div id="training-overview-settings"></div>
+    </section>
     <section>
       <h2>Launch Settings</h2>
       <label>Python Executable<input id="python" type="text" list="environments" required form="launch-form"></label>
@@ -81,6 +136,8 @@
   </details>
   <script src="/console.js"></script>
   <script src="/resources.js"></script>
+  <script src="/charts.js"></script>
+  <script src="/training_view.js"></script>
   <script src="/board.js"></script>
 </body>
 </html>

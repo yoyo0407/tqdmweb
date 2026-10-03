@@ -13,6 +13,7 @@ from .board_files import python_environments
 from .board_dialog import NativePicker
 from .board_process import ProcessRunner
 from .board_monitor import ResourceMonitor
+from .board_training import TrainingBridge
 
 
 class TqdmBoard:
@@ -21,6 +22,7 @@ class TqdmBoard:
         self.directory = Path(directory or self.project_root).resolve(strict=True)
         self.runner = ProcessRunner(self.project_root)
         self.monitor = ResourceMonitor()
+        self.training = TrainingBridge(self.runner)
         self.picker = NativePicker(self.directory)
         self.closed = Event()
         self.server = None
@@ -31,7 +33,9 @@ class TqdmBoard:
         board = self
         assets = {"/": ("board.html", "text/html"), "/board.js": ("board.js", "text/javascript"),
                   "/resources.js": ("resources.js", "text/javascript"),
-                  "/console.js": ("console.js", "text/javascript")}
+                  "/console.js": ("console.js", "text/javascript"),
+                  "/charts.js": ("charts.js", "text/javascript"),
+                  "/training_view.js": ("training_view.js", "text/javascript")}
         files = {route: (Path(__file__).with_name(name).read_bytes(), kind) for route, (name, kind) in assets.items()}
 
         class Handler(BaseHTTPRequestHandler):
@@ -60,7 +64,9 @@ class TqdmBoard:
                     if route.path in files:
                         self.respond(*files[route.path])
                     elif route.path == "/state":
-                        self.respond_json({**board.runner.snapshot(), "resources": board.monitor.snapshot()})
+                        process = board.runner.snapshot()
+                        self.respond_json({**process, "resources": board.monitor.snapshot(),
+                                           "training": board.training.snapshot(process)})
                     elif route.path == "/config":
                         config = board.runner.snapshot()["config"]
                         script = board.directory / "gpu_training_demo.py"
@@ -97,6 +103,10 @@ class TqdmBoard:
                                           python_environments=python_environments(Path(path).parent))
                         self.respond_json(result)
                         return
+                    elif self.path == "/training-control":
+                        result, status = board.training.control(data)
+                        self.respond_json(result, status)
+                        return
                     elif self.path == "/run":
                         board.runner.start(data)
                     elif self.path == "/restart":
@@ -120,6 +130,7 @@ class TqdmBoard:
         self.server = ThreadingHTTPServer(("127.0.0.1", self.port), Handler)
         self.url = f"http://127.0.0.1:{self.server.server_port}/"
         self.monitor.start()
+        self.training.start()
         Thread(target=self.server.serve_forever, daemon=True).start()
         print(f"tqdmboard: {self.url}", flush=True)
         return self.url
@@ -129,6 +140,7 @@ class TqdmBoard:
         try:
             self.runner.close()
         finally:
+            self.training.close()
             self.monitor.close()
             self.picker.close()
             if self.server is not None:

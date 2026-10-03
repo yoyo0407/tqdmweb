@@ -1,8 +1,7 @@
 // Each chart owns its settings. Changing a chart never sends training commands.
-function createChart(containerId, historyKind) {
+function createChart(containerId, historyKind, settingsContainerId = null) {
   const container = document.getElementById(containerId);
   container.innerHTML = `
-    <details class="chart-advanced"><summary>Axis Settings (Advanced)</summary>
     <form class="chart-settings">
       <div class="axis-row">
         <label>X Axis <select name="x"><option value="2">Step</option><option value="0">Elapsed Time</option><option value="3">Update Index</option></select></label>
@@ -16,11 +15,12 @@ function createChart(containerId, historyKind) {
       </div>
       <div class="axis-row"><button type="submit">Apply Axes</button><button type="button" class="chart-reset">Reset Axes</button></div>
       <p class="chart-error" role="status"></p>
-    </form></details>
+    </form>
     <canvas width="640" height="280" role="img"></canvas>
     <p class="chart-caption hint" role="status"></p>`;
 
   const form = container.querySelector("form");
+  if (settingsContainerId) document.getElementById(settingsContainerId).replaceChildren(form);
   const field = name => form.elements.namedItem(name);
   const canvas = container.querySelector("canvas");
   const error = container.querySelector(".chart-error");
@@ -57,7 +57,7 @@ function createChart(containerId, historyKind) {
     field("ymin").value = field("ymax").value = "";
     applySettings();
   };
-  container.querySelector(".chart-reset").onclick = () => {
+  form.querySelector(".chart-reset").onclick = () => {
     field("x").value = "2";
     field("y").value = histories.loss ? "loss" : Object.keys(histories)[0] || "";
     for (const name of ["xmin", "xmax", "ymin", "ymax"]) field(name).value = "";
