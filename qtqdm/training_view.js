@@ -149,6 +149,8 @@ function createTrainingView({prefix = "", send, settingsContainer = null}) {
     connected = false;
     for (const id of ["control-message", "lr-current", "save-status", "save-schedule-status"]) byId(id).textContent = "";
     byId("lr-input").value = byId("save-step").value = "";
+    overviewChart?.destroy();
+    recentChart?.destroy();
     overviewChart = createChart(prefix + "chart-overview", "overview", settingsContainer);
     recentChart = createChart(prefix + "chart-recent", "recent");
     updateControls();

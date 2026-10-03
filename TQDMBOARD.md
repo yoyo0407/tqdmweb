@@ -32,16 +32,16 @@ PowerShell 使用：
 
 1. 按 Choose Script，使用 Windows 原生選檔視窗選擇 `.py`。Cancel 保留目前設定。
 2. Script 所在 folder 自動成為 Working Directory，並偵測附近 Python environment。
-3. 按 Run；Basic 顯示 process state、stdout／stderr、progress、metrics、Training History，以及 Pause／Stop／Save Checkpoint。
+3. 在 Basic 的 Arguments 填入所需 command-line arguments，再按 Run；Basic 顯示 process state、stdout／stderr、progress、metrics、Training History，以及 Pause／Stop／Save Checkpoint。
 4. Stop Process 結束 child process；Quit App 關閉 App。Script 結束後 App 仍可選擇下一個 script。
 
 Process Console 提供 Follow Tail、Copy Output，完整 log 存在 `runs/tqdmboard/`。一般 Python script 也能執行；training controls 需要 script 接入 Qtqdm。
 
 ## Advanced
 
-Advanced 預設收合，包含 Python Executable、Working Directory、Arguments、Restart Process、Force Stop、PID／exit code 和 System Resources；training 的 Learning Rate、Checkpoint Schedule、Recent History、capabilities 與 Training History Axes 也放在此處。Choose Python／Choose Directory 同樣開啟系統視窗；也可手動填入這兩個欄位。
+Advanced 預設收合，包含 Python Executable、Working Directory、Restart Process、Force Stop、PID／exit code 和 System Resources；training 的 Learning Rate、Checkpoint Schedule、Recent History、capabilities 與 Training History Axes 也放在此處。Choose Python／Choose Directory 同樣開啟系統視窗；也可手動填入這兩個欄位。
 
-Arguments 使用原本 command-line 格式，例如 `--steps 100 --learning-rate 0.03 --momentum 0.6`。App 以 argument list 和 shell=False 啟動，含空白的單一 argument 使用引號。
+Basic 的 Arguments 使用原本 command-line 格式，例如 `--steps 100 --learning-rate 0.03 --momentum 0.6`。App 以 argument list 和 shell=False 啟動，含空白的單一 argument 使用引號。
 
 Restart Process 先要求舊 script 停止，等 exit 後以現在的 launcher settings 啟動新 process，重新載入程式碼。Force Stop 立即終止 process tree，不保證保存新的 checkpoint。沒有 Qtqdm 內部的 Training Restart 或 hyperparameter 重啟表單。
 
@@ -92,3 +92,5 @@ App 顯示整台電腦的 CPU utilization、已用／總 RAM，以及 NVIDIA GPU
 ```
 
 測試涵蓋 native dialog initialization／selection／Cancel、Windows argument quoting、空白路徑、working directory、stdout／stderr、process exit／restart／force stop、初始化期間的 Stop，以及單次 training controls、control relay、child HTTP errors、stale job 拒絕、斷線資料保留和慢回應的隔離。網頁測試另驗證 RTX 5060 訓練、Basic／Advanced、單次 Qtqdm 與 Restart Process。
+
+Chart display regression test：安裝 Node.js／Playwright 並有 Edge 時，從專案根目錄執行 `node tests/chart_ui_smoke.cjs`。測試 DPR 2、Advanced 展開、resize、大步數／微小數值刻度、手動範圍與 Arguments 的 Basic 位置；使用固定資料，不執行模型訓練。
