@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Qtqdm progress</title>
+  <style>
+    body { font: 16px system-ui, sans-serif; max-width: 640px; margin: 10vh auto; padding: 0 20px; color: #202124; }
+    h1 { font-size: 1.5rem; margin-bottom: 8px; }
+    #state { color: #59636e; margin-bottom: 24px; }
+    #state.failed { color: #b42318; font-weight: 700; }
+    progress { width: 100%; height: 24px; }
+    dl { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; }
+    dt { color: #59636e; }
+    dd { margin: 0 0 12px; font-variant-numeric: tabular-nums; }
+    h2 { font-size: 1.1rem; margin-top: 24px; }
+    canvas { width: 100%; height: auto; border: 1px solid #d8dee4; border-radius: 6px; }
+    .hint { color: #59636e; font-size: 0.85rem; }
+    .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 20px 0 10px; }
+    [hidden] { display: none !important; }
+    button, input { font: inherit; padding: 8px 12px; border: 1px solid #b8c2cc; border-radius: 6px; }
+    button { background: #f5f7fa; cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: default; }
+    #stop { color: #b42318; }
+    #lr-input, #save-step { width: 100px; }
+    #control-message { min-height: 1.2em; }
+    #save-status { overflow-wrap: anywhere; }
+  </style>
+</head>
+<body>
+  <h1 id="description">Progress</h1>
+  <div id="state">Waiting...</div>
+  <progress id="bar"></progress>
+  <div class="controls">
+    <button id="pause" type="button">暫停</button>
+    <button id="stop" type="button">提前停止</button>
+    <button id="save" type="button" hidden>儲存模型</button>
+  </div>
+  <form id="lr-form" class="controls" hidden>
+    <label for="lr-input">Learning rate</label>
+    <input id="lr-input" type="number" step="any" min="0" required>
+    <button id="lr-apply" type="submit">套用</button>
+    <span id="lr-current" class="hint"></span>
+  </form>
+  <form id="save-form" class="controls" hidden>
+    <label for="save-step">完成第幾步後儲存</label>
+    <input id="save-step" type="number" min="1" step="1" required>
+    <button id="save-schedule" type="submit">預訂儲存</button>
+    <button id="save-cancel" type="button" hidden>取消預訂</button>
+  </form>
+  <p id="save-schedule-status" class="hint" role="status"></p>
+  <p id="control-message" class="hint" role="status"></p>
+  <p id="save-status" class="hint" role="status"></p>
+  <dl>
+    <div><dt>Progress</dt><dd id="started">0</dd></div>
+    <div><dt>Completed</dt><dd id="completed">0</dd></div>
+    <div><dt>Rate</dt><dd id="rate">—</dd></div>
+    <div><dt>Elapsed</dt><dd id="elapsed">0 s</dd></div>
+    <div><dt>Remaining</dt><dd id="remaining">—</dd></div>
+  </dl>
+  <section id="metrics-section" hidden>
+    <h2>Metrics</h2>
+    <dl id="metrics"></dl>
+  </section>
+  <section id="loss-section" hidden>
+    <h2>Loss · full run</h2>
+    <p class="hint">Older points are sampled to keep the chart small · horizontal axis: elapsed seconds</p>
+    <canvas id="loss-overview" width="640" height="220"></canvas>
+    <h2>Loss · recent detail</h2>
+    <p class="hint">Latest 300 updates · horizontal axis: elapsed seconds</p>
+    <canvas id="loss-recent" width="640" height="220"></canvas>
+  </section>
+  <script>
+    const byId = id => document.getElementById(id);
+    const seconds = value => value == null ? "—" : `${Math.round(value)} s`;
+    let errorShown = false;
+    let controlState = null;
+    let commandBusy = false;
+    let connected = false;
+    let rateInitialized = false;
+    let pendingCommand = null;
+
+    function updateControls() {
+      const ended = !connected || !controlState || controlState.finished || controlState.stop_requested;
+      byId("pause").disabled = ended || commandBusy;
+      byId("stop").disabled = ended || commandBusy;
+      byId("lr-apply").disabled = ended || commandBusy;
+      byId("lr-input").disabled = ended;
+      byId("save").hidden = !controlState?.saving_enabled;
+      byId("save").disabled = ended || commandBusy || controlState?.save_requested || controlState?.saving;
+      byId("save-form").hidden = !controlState?.saving_enabled;
+      byId("save-step").disabled = ended;
+      byId("save-schedule").disabled = ended || commandBusy;
+      byId("save-cancel").hidden = controlState?.save_at_step == null;
+      byId("save-cancel").disabled = ended || commandBusy;
+      byId("pause").textContent = controlState?.pause_requested ? "繼續" : "暫停";
+    }
+
+    async function sendControl(action, value) {
+      commandBusy = true;
+      updateControls();
+      try {
+        const response = await fetch("/control", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({action, value}),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error);
+        pendingCommand = {action, value};
+        byId("control-message").textContent = "指令已送出，等待訓練迴圈處理。";
+      } catch (error) {
+        byId("control-message").textContent = error.message;
+      } finally {
+        commandBusy = false;
+        updateControls();
+      }
+    }
+
+    byId("pause").onclick = () => sendControl(controlState.pause_requested ? "resume" : "pause");
+    byId("save").onclick = () => sendControl("save");
+    byId("save-cancel").onclick = () => sendControl("cancel_save");
+    byId("save-form").onsubmit = event => {
+      event.preventDefault();
+      const step = Number(byId("save-step").value);
+      if (!Number.isInteger(step) || step <= controlState.completed ||
+          (controlState.total != null && step > controlState.total)) {
+        byId("control-message").textContent = "請選擇尚未完成、且不超過總目標的整數步數。";
+        return;
+      }
+      sendControl("schedule_save", step);
+    };
+    byId("stop").onclick = () => {
+      if (confirm("確定提前停止？停止後無法繼續這次工作，已寫入的 CSV 會保留。")) sendControl("stop");
+    };
+    byId("lr-form").onsubmit = event => {
+      event.preventDefault();
+      const value = Number(byId("lr-input").value);
+      if (!Number.isFinite(value) || value <= 0) {
+        byId("control-message").textContent = "Learning rate 必須是大於零的有限數值。";
+        return;
+      }
+      sendControl("learning_rate", value);
+    };
+    updateControls();
+
+    function drawLoss(canvasId, points) {
+      const canvas = byId(canvasId);
+      const ctx = canvas.getContext("2d");
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (!points.length) return;
+
+      const left = 55, right = canvas.width - 15, top = 15, bottom = canvas.height - 30;
+      const values = points.map(point => point[1]);
+      let low = Math.min(...values), high = Math.max(...values);
+      if (low === high) {
+        const padding = Math.max(Math.abs(low) * 0.05, 0.001);
+        low -= padding;
+        high += padding;
+      }
+      const spread = high - low;
+      const start = points[0][0], duration = points.at(-1)[0] - start;
+      const x = (point, index) => left + (right - left) *
+        (duration > 0 ? (point[0] - start) / duration : index / Math.max(points.length - 1, 1));
+      const y = point => bottom - (bottom - top) * (point[1] - low) / spread;
+
+      ctx.strokeStyle = "#d8dee4";
+      ctx.beginPath();
+      ctx.moveTo(left, top);
+      ctx.lineTo(left, bottom);
+      ctx.lineTo(right, bottom);
+      ctx.stroke();
+      ctx.fillStyle = "#59636e";
+      ctx.font = "12px system-ui";
+      ctx.fillText(high.toFixed(3), 5, top + 5);
+      ctx.fillText(low.toFixed(3), 5, bottom);
+      ctx.fillText(`${start.toFixed(1)}s`, left, canvas.height - 8);
+      ctx.fillText(`${points.at(-1)[0].toFixed(1)}s`, right - 35, canvas.height - 8);
+
+      ctx.strokeStyle = "#1769e0";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      points.forEach((point, index) => {
+        if (index === 0) ctx.moveTo(x(point, index), y(point));
+        else ctx.lineTo(x(point, index), y(point));
+      });
+      ctx.stroke();
+      if (points.length === 1) {
+        ctx.beginPath();
+        ctx.arc(x(points[0], 0), y(points[0]), 3, 0, Math.PI * 2);
+        ctx.fillStyle = "#1769e0";
+        ctx.fill();
+      }
+    }
+
+    async function refresh() {
+      try {
+        const response = await fetch("/state", {cache: "no-store"});
+        if (!response.ok) throw new Error("Server unavailable");
+        const data = await response.json();
+        connected = true;
+        controlState = data.control;
+        updateControls();
+        if (pendingCommand) {
+          const done = controlState.finished ||
+            (pendingCommand.action === "pause" && controlState.paused) ||
+            (pendingCommand.action === "resume" && !controlState.pause_requested && !controlState.paused) ||
+            (pendingCommand.action === "learning_rate" && controlState.pending_learning_rate == null && controlState.learning_rate === pendingCommand.value) ||
+            (pendingCommand.action === "save" && !controlState.save_requested && !controlState.saving && (controlState.last_checkpoint || controlState.save_error)) ||
+            (pendingCommand.action === "schedule_save" && (controlState.save_at_step === pendingCommand.value || controlState.completed >= pendingCommand.value)) ||
+            (pendingCommand.action === "cancel_save" && controlState.save_at_step == null);
+          if (done) {
+            const messages = {pause: "已暫停。", resume: "已繼續。", stop: "已停止。", learning_rate: "Learning rate 已套用。", save: controlState.save_error ? "模型儲存失敗。" : "模型已儲存。", schedule_save: "儲存預訂已受理。", cancel_save: "已取消儲存預訂。"};
+            byId("control-message").textContent = pendingCommand.action === "save" ? messages.save : controlState.finished ? "工作已結束。" : messages[pendingCommand.action];
+            pendingCommand = null;
+          }
+        }
+        byId("description").textContent = data.description || "Progress";
+        const states = {waiting: "等待開始", running: "訓練中", pause_requested: "等待目前這一步完成後暫停", paused: "已暫停", saving: "正在儲存模型", stop_requested: "等待目前這一步完成後停止", stopped: "已停止", finished: "已完成", failed: "執行失敗"};
+        byId("state").textContent = states[data.state] || data.state;
+        // A loop only exposes LR controls after reporting its optimizer's value.
+        byId("lr-form").hidden = data.control.learning_rate == null;
+        if (data.control.learning_rate != null) {
+          if (!rateInitialized) {
+            byId("lr-input").value = data.control.learning_rate;
+            rateInitialized = true;
+          }
+          byId("lr-current").textContent = `目前：${data.control.learning_rate}` +
+            (data.control.pending_learning_rate == null ? "" : `；等待套用：${data.control.pending_learning_rate}`);
+        }
+        byId("state").classList.toggle("failed", data.state === "failed");
+        byId("save-status").textContent = data.control.saving ? "正在寫入模型保存檔…" :
+          data.control.save_requested ? "已收到儲存要求，等待步驟邊界。" :
+          data.control.save_error ? `儲存失敗：${data.control.save_error}` :
+          data.control.last_checkpoint ? `已儲存：${data.control.last_checkpoint}` : "";
+        byId("save-schedule-status").textContent = data.control.save_at_step == null ? "" : `預訂於完成第 ${data.control.save_at_step} 步後儲存。`;
+        byId("started").textContent = data.total == null
+          ? `${data.started} / unknown`
+          : `${data.started} / ${data.total}`;
+        byId("completed").textContent = data.completed;
+        byId("rate").textContent = data.rate ? `${data.rate.toFixed(1)} items/s` : "—";
+        byId("elapsed").textContent = seconds(data.elapsed);
+        byId("remaining").textContent = data.state === "paused" ? "暫停中" : seconds(data.remaining);
+        const bar = byId("bar");
+        if (data.total == null) bar.removeAttribute("value");
+        else { bar.max = Math.max(data.total, 1); bar.value = data.started; }
+        const metrics = byId("metrics");
+        metrics.replaceChildren();
+        for (const [name, value] of Object.entries(data.metrics)) {
+          const box = document.createElement("div");
+          const label = document.createElement("dt");
+          const number = document.createElement("dd");
+          label.textContent = name;
+          number.textContent = value;
+          box.append(label, number);
+          metrics.append(box);
+        }
+        byId("metrics-section").hidden = Object.keys(data.metrics).length === 0;
+        byId("loss-section").hidden = data.loss_overview.length === 0;
+        drawLoss("loss-overview", data.loss_overview);
+        drawLoss("loss-recent", data.loss_recent);
+        if (data.state === "failed" && !errorShown) {
+          errorShown = true;
+          alert(data.error || "The task failed.");
+        }
+      } catch (error) {
+        connected = false;
+        updateControls();
+        byId("state").textContent = "Disconnected";
+      } finally {
+        setTimeout(refresh, 250);
+      }
+    }
+
+    refresh();
+  </script>
+</body>
+</html>
