@@ -12,6 +12,7 @@ function createTrainingView({prefix = "", send, settingsContainer = null, readHi
   let overviewChart;
   let recentChart;
   let fullHistories = {};
+  let events = [];
   let historyCursor = 0;
   let historyBusy = false;
 
@@ -29,7 +30,7 @@ function createTrainingView({prefix = "", send, settingsContainer = null, readHi
           fullHistories[name].full.push(...points);
         }
         historyCursor = page.next_update;
-        recentChart.update(fullHistories);
+        recentChart.update(fullHistories, events);
       }
     } catch (error) {
       if (requestGeneration === generation) recentChart.setStatus(`History loading interrupted: ${error.message}. Retrying...`);
@@ -163,8 +164,9 @@ function createTrainingView({prefix = "", send, settingsContainer = null, readHi
     }
     byId("metrics-section").hidden = Object.keys(data.metrics).length === 0;
     byId("loss-section").hidden = Object.keys(data.charts).length === 0;
-    overviewChart.update(data.charts);
-    recentChart.update(fullHistories);
+    events = data.events || [];
+    overviewChart.update(data.charts, events);
+    recentChart.update(fullHistories, events);
     loadHistory(data.history_updates || 0);
     if (historyError) recentChart.setStatus(`History temporarily unavailable: ${historyError}. Retrying...`);
     if (data.state === "failed" && !errorShown && !archived && notifyErrors) {
@@ -202,6 +204,7 @@ function createTrainingView({prefix = "", send, settingsContainer = null, readHi
     controlState = pendingCommand = null;
     connected = false;
     fullHistories = {};
+    events = [];
     historyCursor = 0;
     historyBusy = false;
     for (const id of ["control-message", "lr-current", "save-status", "save-schedule-status"]) byId(id).textContent = "";

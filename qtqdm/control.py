@@ -1,6 +1,7 @@
 """Commands shared by the web server and the training loop."""
 
 from math import isfinite
+from pathlib import Path
 from threading import Condition
 
 
@@ -25,6 +26,8 @@ class TrainingControl:
         self._save_at_step = None
         self._completed = 0
         self._total = None
+        self.on_event = None
+        self._stop_recorded = False
 
     def request(self, action, value=None):
         if action not in ("pause", "resume", "stop", "learning_rate", "save", "schedule_save", "cancel_save"):
@@ -97,22 +100,34 @@ class TrainingControl:
             self._completed = completed
             self._total = total
 
+    def _emit(self, kind, label):
+        # Called with the lock held. on_event only takes Progress's history lock, and nothing
+        # holds that lock while asking for this one, so the order cannot deadlock.
+        if self.on_event is not None:
+            self.on_event(kind, label)
+
     def checkpoint(self, final=False, completed=None):
         """Handle commands on the training thread, also while paused."""
         while True:
             with self._condition:
                 if completed is not None:
                     self._completed = completed
-                self._paused = self._pause_requested and not self._stop_requested and not final
                 if self._finished:
                     self._paused = False
                     return False
+                paused = self._pause_requested and not self._stop_requested and not final
+                if paused and not self._paused:
+                    self._emit("pause", "Paused")
+                elif self._paused and not paused and not self._stop_requested:
+                    self._emit("resume", "Resumed")
+                self._paused = paused
                 if self._save_at_step is not None and self._completed >= self._save_at_step:
                     self._save_requested = True
                     self._save_request_id += 1
                     self._save_at_step = None
                 if self._pending_learning_rate is not None and not self._stop_requested:
                     rate = self._pending_learning_rate
+                    previous_rate = self._learning_rate
                     self._pending_learning_rate = None
                     handler = self._rate_handler
                     operation = "learning_rate"
@@ -127,6 +142,9 @@ class TrainingControl:
                     self._paused = False
                     if final:
                         self._finished = True
+                    if self._stop_requested and not self._stop_recorded:
+                        self._stop_recorded = True  # inner and outer bars both reach this boundary
+                        self._emit("stop", "Stopped")
                     return not self._stop_requested
                 else:
                     self._condition.wait()
@@ -147,13 +165,16 @@ class TrainingControl:
                         self._rate_error = f"{type(error).__name__}: {error}"
                     else:
                         self._save_error = f"{type(error).__name__}: {error}"
+                        self._emit("save_error", "Save failed")
             else:
                 with self._condition:
                     if operation == "learning_rate":
                         self._learning_rate = rate
                         self._rate_error = None
+                        self._emit("learning_rate", f"LR {previous_rate} → {rate}")
                     else:
                         self._last_checkpoint = path
+                        self._emit("save", f"Saved {Path(path).name}")
             finally:
                 with self._condition:
                     if operation == "save":

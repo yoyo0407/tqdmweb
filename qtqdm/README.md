@@ -92,6 +92,18 @@ finally:
 
 完整資料保存在 training process 記憶體，透過 `GET /history?after=UPDATE_INDEX` 每頁最多 2,000 次 updates 增量讀取，不在每次 `/state` 重送全部歷史。Board 另保留已收到的完整資料，process 結束後仍可刷新查看；新 process 會清空前一個 job 的畫面。完整歷史的 RAM 使用量會隨更新數增加，CSV 仍是磁碟上的完整紀錄。
 
+### 事件標註
+
+曲線會自動標註實際生效的 Pause／Resume／Stop、Learning Rate 調整，以及 Checkpoint 保存成功或失敗。不同操作以不同顏色的虛線顯示，密集事件只畫線以避免文字重疊；圖表下方列出目前 X 範圍內的事件數。History 回看也保留這些標註。
+
+可在訓練程式中加入自己的事件：
+
+```python
+progress.mark("phase 2")
+```
+
+文字去除首尾空白後須為 1 至 100 個字元。事件記錄當下的經過時間、Step 與 Update Index，隨圖表 X 軸切換；子進度條的 `mark()` 記到最外層。事件只影響顯示，不修改訓練、metrics 或 CSV。
+
 ### 自訂座標軸
 
 兩張圖可各自設定，按`Apply Axes`生效：

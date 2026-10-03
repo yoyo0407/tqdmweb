@@ -36,7 +36,9 @@ class Progress:
         self._chart_history = {}
         self._metric_updates = 0
         self._history_lock = Lock()
+        self.events = []
         self.control = TrainingControl()
+        self.control.on_event = self._record_event
         self.control.configure_steps(initial, total)
         self._csv_log = CsvLog(csv_path) if csv_path is not None else None
         self._finalized = False
@@ -57,6 +59,16 @@ class Progress:
 
     def set_description(self, desc=None, refresh=True):
         self.description = desc or ""
+
+    def _record_event(self, kind, label):
+        with self._history_lock:
+            elapsed = 0 if self.started_at is None else monotonic() - self.started_at
+            self.events.append([elapsed, kind, self.started, self._metric_updates, label])
+
+    def mark(self, label):
+        if not isinstance(label, str) or not label.strip() or len(label.strip()) > 100:
+            raise ValueError("Event label must be a non-empty string of at most 100 characters")
+        self._record_event("mark", label.strip())
 
     def update(self, n=1):
         """Advance a manual bar by n completed items, then handle controls at this boundary."""
@@ -196,9 +208,11 @@ class Progress:
         with self._history_lock:
             charts = {name: history.snapshot() for name, history in self._chart_history.items()}
             history_updates = self._metric_updates
+            events = list(self.events)
         elapsed, rate, remaining = self._timing()
         return {
             "history_updates": history_updates,
+            "events": events,
             "description": self.description,
             "started": self.started,
             "completed": self.completed,

@@ -126,6 +126,11 @@ class Qtqdm(Progress):
             raise RuntimeError("Register controls on the outermost bar")
         return super().register_controls(**handlers)
 
+    def mark(self, label):
+        if self.is_child:
+            return self.root.mark(label)
+        return super().mark(label)
+
     def _archive_result(self):
         if self._archived or not self._has_page:
             return

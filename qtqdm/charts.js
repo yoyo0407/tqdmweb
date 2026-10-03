@@ -38,6 +38,7 @@ function createChart(containerId, historyKind, settingsContainerId = null) {
   const error = form.querySelector(".chart-error");
   const caption = container.querySelector(".chart-caption");
   let histories = {};
+  let annotations = [];
   let settings = {x: 2, y: null, xmin: null, xmax: null, ymin: null, ymax: null, smoothing: 0};
 
   function applySettings() {
@@ -175,6 +176,25 @@ function createChart(containerId, historyKind, settingsContainerId = null) {
       ctx.beginPath(); ctx.arc(x(points[0]), y(points[0]), 3, 0, Math.PI * 2);
       ctx.fillStyle = "#1769e0"; ctx.fill();
     }
+    const colors = {learning_rate: "#d97706", save: "#16a34a", save_error: "#dc2626",
+                    stop: "#dc2626", mark: "#9333ea", pause: "#6b7280", resume: "#6b7280"};
+    let eventCount = 0, lastLabelRight = -Infinity;
+    ctx.setLineDash([4, 4]);
+    ctx.lineWidth = 1;
+    ctx.font = "12px system-ui";
+    ctx.textAlign = "left";
+    for (const event of annotations) {
+      if (event[settings.x] < xmin || event[settings.x] > xmax) continue;
+      eventCount++;
+      const px = x(event);
+      ctx.strokeStyle = ctx.fillStyle = colors[event[1]] || "#6b7280";
+      ctx.beginPath(); ctx.moveTo(px, top); ctx.lineTo(px, bottom); ctx.stroke();
+      if (px >= lastLabelRight + 8) {
+        ctx.fillText(event[4], px + 4, top + 14);
+        lastLabelRight = px + Math.max(32, ctx.measureText(event[4]).width + 4);
+      }
+    }
+    ctx.setLineDash([]);
     ctx.restore();
     const sampleMin = points.reduce((low, point) => Math.min(low, point[settings.x]), Infinity);
     const sampleMax = points.reduce((high, point) => Math.max(high, point[settings.x]), -Infinity);
@@ -182,7 +202,8 @@ function createChart(containerId, historyKind, settingsContainerId = null) {
       (visible.length ? "" : "; No samples in this X range.") +
       (historyKind === "overview" ? " | Downsampled training history." : " | Full metric history; no rolling window.") +
       (settings.smoothing ? ` EMA ${settings.smoothing}; raw data retained.` : " Raw data.") +
-      ` Samples: ${numberLabel(sampleMin, xInterval)} – ${numberLabel(sampleMax, xInterval)} (${points.length} points).`;
+      ` Samples: ${numberLabel(sampleMin, xInterval)} – ${numberLabel(sampleMax, xInterval)} (${points.length} points).` +
+      (eventCount ? ` Events: ${eventCount}.` : "");
   }
 
   const resizeObserver = new ResizeObserver(draw);
@@ -190,8 +211,9 @@ function createChart(containerId, historyKind, settingsContainerId = null) {
   return {
     destroy() { resizeObserver.disconnect(); },
     setStatus(message) { caption.textContent = message; },
-    update(data) {
+    update(data, events = []) {
       histories = data;
+      annotations = events;
       for (const name of Object.keys(histories)) {
         if (![...field("y").options].some(option => option.value === name)) {
           const option = document.createElement("option");

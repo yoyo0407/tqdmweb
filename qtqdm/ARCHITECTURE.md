@@ -73,6 +73,8 @@ Canvas 以實際 CSS 尺寸與 devicePixelRatio 設定 bitmap，ResizeObserver �
 
 ## Registered controls
 
+事件標註資料流為 `TrainingControl.on_event` → `Progress._record_event` → `/state.events` → `charts.js` 畫事件虛線；每筆格式為 `[elapsed, kind, step, update_index, label]`，X 軸沿用曲線的 index 0／2／3。控制事件在實際暫停、恢復、停止、調整 LR 成功或保存結果產生時記錄，手動 `mark()` 與子 bar 的標註也存到最外層。`snapshot()` 在 history lock 內複製 events，Board 的 SQLite training snapshot 保留它，History 回看使用同一份資料。`on_event` 在持有 Condition 鎖時呼叫（`_emit`）；它只會再拿 history lock，而程式中沒有任何地方持有 history lock 時去拿控制鎖，鎖順序固定為「控制鎖 → history lock」，不會互相等待。之後若在 history lock 內呼叫 control，要先改掉這個設計。
+
 `Progress.register_controls` 是公開入口，轉交 `TrainingControl.register_controls`。Script 提供 `save_checkpoint()` 與 `set_learning_rate(value)`，後者同時提供初始 learning rate；函式不直接依賴 PyTorch。Qtqdm 在下一個 step boundary 自動呼叫已註冊 handler，將結果寫回 control state。控制僅保留 handler 接入方式。
 
 `checkpoint()` 在 Condition 鎖內取得待處理指令，釋放鎖後執行 callback，再取得鎖回報結果。已暫停时也會被指令喚醒，處理後繼續等待；同一 boundary 先套用 learning rate，再執行保存。Stop 優先取消尚未套用的 learning rate；已排入的保存仍可完成。Callback 發生 Exception 時回報 `learning_rate_error`／`save_error`，不讓一般控制失敗中斷 training；不保證回滾 handler 內部的部分修改。
