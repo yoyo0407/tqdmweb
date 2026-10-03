@@ -18,12 +18,18 @@ const state=async()=>{const r=await fetch(url+'state');return r.json();};
  await page.locator('#advanced-section > summary').click();
  await page.locator('#arguments').fill('--steps 2000 --batch-size 32 --warmup 64 --step-delay 0.003');
  await page.locator('#run').click();
- await wait(async()=>{const t=(await state()).training.data;return t&&t.completed>=100&&Number(t.metrics.updates)>0;});
+ await wait(async()=>{const t=(await state()).training.data;return t&&t.completed>=400&&Number(t.metrics.updates)>0;});
  assert((await page.locator('#console-output').innerText()).includes('RTX 5060'));
  await wait(async()=> (await page.locator('#training-metrics').innerText()).includes('loss'));
  await page.locator('#training-pause').click();
  await wait(async()=> (await state()).training.data?.control.paused);
  const before=(await state()).training.data.completed;
+ await wait(async()=> (await page.locator('#training-chart-recent .chart-caption').innerText()).includes(`(${before} points)`));
+ const firstJobId=(await state()).job_id;
+ const history=await (await fetch(url+`training-history?job_id=${firstJobId}&after=0`)).json();
+ assert.strictEqual(history.charts.score[0][2],1);
+ assert(history.charts.score.length>300);
+ assert.strictEqual(history.charts.score.length,before);
  const start=Date.now();
  await page.locator('#training-lr-input').fill('0.0002');await page.locator('#training-lr-apply').click();
  await wait(async()=> (await state()).training.data.control.learning_rate===0.0002);
@@ -62,7 +68,7 @@ const state=async()=>{const r=await fetch(url+'state');return r.json();};
  await page.locator('#stop-process').click();await wait(async()=> !(await state()).running);
  assert.strictEqual((await state()).training.data.completed,scheduled+150);
  assert.strictEqual(errors.length,0,errors.join('\n'));
- console.log(JSON.stringify({result:'PASS',gpu:'RTX 5060',control_lag_ms:lag,checkpoint_step:scheduled,final_step:final.completed,optimizer_updates:final.metrics.updates,loss:final.metrics.loss,best_tile:final.metrics.best_tile,features:['Board-owned UI','Pause/Resume','Learning Rate','Save','Schedule/Cancel','Chart Axes','Stop Training','Restart Process with Resume','Reload','Retained Final Data']}));
+ console.log(JSON.stringify({result:'PASS',gpu:'RTX 5060',control_lag_ms:lag,checkpoint_step:scheduled,final_step:final.completed,optimizer_updates:final.metrics.updates,loss:final.metrics.loss,best_tile:final.metrics.best_tile,features:['Board-owned UI','Pause/Resume','Learning Rate','Save','Schedule/Cancel','Chart Axes','Full history beyond 300 updates','Stop Training','Restart Process with Resume','Reload','Retained Final Data']}));
  await page.locator('#quit').click();await wait(()=>app.exitCode!==null);assert.strictEqual(app.exitCode,0);
 }finally{
  if(url&&app.exitCode===null){try{await fetch(url+'shutdown',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});}catch{}try{await wait(()=>app.exitCode!==null,10);}catch{}}

@@ -39,7 +39,7 @@ Process Console 提供 Follow Tail、Copy Output，完整 log 存在 `runs/tqdmb
 
 ## Advanced
 
-Advanced 預設收合，包含 Python Executable、Working Directory、Restart Process、Force Stop、PID／exit code 和 System Resources；training 的 Learning Rate、Checkpoint Schedule、Recent History、capabilities 與 Training History Axes 也放在此處。Choose Python／Choose Directory 同樣開啟系統視窗；也可手動填入這兩個欄位。
+Advanced 預設收合，包含 Python Executable、Working Directory、Restart Process、Force Stop、PID／exit code 和 System Resources；training 的 Learning Rate、Checkpoint Schedule、Full Metric History、capabilities 與 Training History Axes 也放在此處。Choose Python／Choose Directory 同樣開啟系統視窗；也可手動填入這兩個欄位。
 
 Basic 的 Arguments 使用原本 command-line 格式，例如 `--steps 100 --learning-rate 0.03 --momentum 0.6`。App 以 argument list 和 shell=False 啟動，含空白的單一 argument 使用引號。
 
@@ -94,3 +94,5 @@ App 顯示整台電腦的 CPU utilization、已用／總 RAM，以及 NVIDIA GPU
 測試涵蓋 native dialog initialization／selection／Cancel、Windows argument quoting、空白路徑、working directory、stdout／stderr、process exit／restart／force stop、初始化期間的 Stop，以及單次 training controls、control relay、child HTTP errors、stale job 拒絕、斷線資料保留和慢回應的隔離。網頁測試另驗證 RTX 5060 訓練、Basic／Advanced、單次 Qtqdm 與 Restart Process。
 
 Chart display regression test：安裝 Node.js／Playwright 並有 Edge 時，從專案根目錄執行 `node tests/chart_ui_smoke.cjs`。測試 DPR 2、Advanced 展開、resize、大步數／微小數值刻度、手動範圍與 Arguments 的 Basic 位置；使用固定資料，不執行模型訓練。
+
+Full Metric History 保留整個 run 的數值更新；追加 update 不裁掉早期 points。重新整理以 incremental history API 重建完整曲線。Board 保留收到的歷史，child process 結束後仍可查看；開始新 process 時才清空前一個 job。

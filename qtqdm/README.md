@@ -56,7 +56,9 @@ finally:
 
 紀錄預設關閉。指定的目錄必須存在，檔名必須是新檔案，避免蓋掉舊結果；UTF-8 編碼含 BOM，方便 Excel 顯示中文。範例中的 `train_step()` 請換成自己的訓練函式。
 
-傳入數值指標後，頁面會畫出兩張曲線：涵蓋整段訓練的總覽，以及最近 300 次該指標更新的細節。每個指標的總覽資料接近 600 筆時，取每隔一筆的點並把後續取樣間隔加倍；第一筆與最新一筆會保留。因此能持續看到全程趨勢，每個指標的記憶體與網頁傳輸資料量都有上限。總覽是取樣結果，可能看不到取樣點之間的短暫尖峰。
+傳入數值指標後，頁面會畫出兩張曲線：Basic 的 Training History 是整段訓練的取樣總覽；Advanced 的 Full Metric History 完整保留每筆數值更新，不使用 rolling window。新 update 不會刪掉前面的 points，重新整理會從 server 重新讀回歷史。總覽接近 600 個 samples 時降低取樣密度，第一筆與最新一筆仍保留；它不是完整曲線。
+
+完整資料保存在 training process 記憶體，透過 `GET /history?after=UPDATE_INDEX` 每頁最多 2,000 次 updates 增量讀取，不在每次 `/state` 重送全部歷史。Board 另保留已收到的完整資料，process 結束後仍可刷新查看；新 process 會清空前一個 job 的畫面。完整歷史的 RAM 使用量會隨更新數增加，CSV 仍是磁碟上的完整紀錄。舊 `charts.recent` 的 300-point preview 僅保留作狀態 API 相容用途，Full Metric History 不使用它。
 
 ### 自訂座標軸
 
@@ -173,7 +175,7 @@ Console Output 是 plain text viewer，捕捉 `with` 期間的 Python text strea
 
 每個 Qtqdm instance 僅監控一次 run；完成、停止或失敗後，controls 停用。已移除多次 run 的 session、Training Restart、Restart Hyperparameters 與相同 URL 重建 model 的流程。
 
-Qtqdm 獨立頁面直接顯示 Progress、Metrics、Pause／Stop、Save Checkpoint、Console、Training History、Learning Rate、Schedule／Cancel Checkpoint、Recent History、capabilities 與 Axis Settings，不分 Basic／Advanced。只有外部 tqdmboard 使用 Basic／Advanced layout。
+Qtqdm 獨立頁面直接顯示 Progress、Metrics、Pause／Stop、Save Checkpoint、Console、Training History、Learning Rate、Schedule／Cancel Checkpoint、Full Metric History、capabilities 與 Axis Settings，不分 Basic／Advanced。只有外部 tqdmboard 使用 Basic／Advanced layout。
 
 GPU 範例的初始 learning rate、momentum、weight decay 與 target steps 透過啟動 arguments 設定。即時 Learning Rate 控制仍使用註冊 handler。`--keep-open` 只保留完成／停止／失敗的頁面供閱讀，Enter 關閉；在 tqdmboard 內也會保留，直到 Stop Process 或 Restart Process 通知結束。
 

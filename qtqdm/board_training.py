@@ -5,6 +5,7 @@ from threading import Event, Lock, Thread
 from time import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+from .chart_history import history_page
 
 
 class TrainingBridge:
@@ -17,6 +18,15 @@ class TrainingBridge:
         self._data = None
         self._sampled_at = None
         self._error = None
+        self._history = {}
+        self._history_cursor = 0
+
+    def history_since(self, job_id, after=0):
+        process = self.runner.snapshot()
+        with self._lock:
+            if job_id != process["job_id"] or job_id != self._job_id:
+                raise ValueError("Training process changed; refresh before reading history")
+            return history_page(self._history, after, self._history_cursor)
 
     def start(self):
         self._thread = Thread(target=self._poll, daemon=True)
@@ -38,11 +48,28 @@ class TrainingBridge:
                 if self._job_id != job_id:
                     self._job_id = job_id
                     self._data = self._sampled_at = self._error = None
+                    self._history = {}
+                    self._history_cursor = 0
             if process["running"] and process["dashboard_url"]:
                 try:
                     with urlopen(process["dashboard_url"] + "state", timeout=1) as response:
                         data = json.load(response)
                     data.pop("console", None)  # Board already owns the complete process console.
+                    # Fetch only new points. Keep them in Board after the child exits.
+                    for _ in range(4):
+                        if self._history_cursor >= data.get("history_updates", 0) or self._closed.is_set():
+                            break
+                        with urlopen(process["dashboard_url"] + f"history?after={self._history_cursor}", timeout=1) as response:
+                            page = json.load(response)
+                        if self.runner.snapshot()["job_id"] != job_id:
+                            break
+                        with self._lock:
+                            for name, points in page["charts"].items():
+                                self._history.setdefault(name, []).extend(points)
+                            previous = self._history_cursor
+                            self._history_cursor = page["next_update"]
+                        if self._history_cursor <= previous:
+                            break
                     error = None
                 except (OSError, URLError, ValueError) as exception:
                     data, error = None, str(exception)

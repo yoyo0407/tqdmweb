@@ -86,7 +86,7 @@
     <button id="save-cancel" type="button" hidden>Cancel Schedule</button>
   </form>
   <p id="save-schedule-status" class="hint" role="status"></p>
-    <h2>Recent History</h2>
+    <h2>Full Metric History</h2>
     <div id="chart-recent"></div>
     <p class="hint">Leave bounds empty for autoscaling. Switching an axis resets its bounds. Reloading restores defaults.</p>
     <p id="capabilities" class="hint"></p>
@@ -95,7 +95,12 @@
   <script src="/training_view.js"></script>
   <script>
     const consoleView = createConsoleView();
-    const trainingView = createTrainingView({send: async (action, value) => {
+    const trainingView = createTrainingView({readHistory: async after => {
+      const response = await fetch(`/history?after=${after}`);
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error);
+      return result;
+    }, send: async (action, value) => {
       const response = await fetch("/control", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action, value})});
       const result = await response.json();
       if (!response.ok) throw new Error(result.error);

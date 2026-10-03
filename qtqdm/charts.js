@@ -76,8 +76,8 @@ function createChart(containerId, historyKind, settingsContainerId = null) {
   }
 
   function bounds(values, min, max) {
-    let low = min ?? Math.min(...values);
-    let high = max ?? Math.max(...values);
+    let low = min ?? values.reduce((low, value) => Math.min(low, value), Infinity);
+    let high = max ?? values.reduce((high, value) => Math.max(high, value), -Infinity);
     if (low >= high) {
       const padding = Math.max(Math.abs(low), Math.abs(high)) * 0.05 || 0.001;
       if (min == null && max == null) { low -= padding; high += padding; }
@@ -162,11 +162,11 @@ function createChart(containerId, historyKind, settingsContainerId = null) {
       ctx.fillStyle = "#1769e0"; ctx.fill();
     }
     ctx.restore();
-    const sampleMin = Math.min(...points.map(point => point[settings.x]));
-    const sampleMax = Math.max(...points.map(point => point[settings.x]));
+    const sampleMin = points.reduce((low, point) => Math.min(low, point[settings.x]), Infinity);
+    const sampleMax = points.reduce((high, point) => Math.max(high, point[settings.x]), -Infinity);
     caption.textContent = `X: ${numberLabel(xmin, xInterval)} – ${numberLabel(xmax, xInterval)}; Y: ${numberLabel(ymin, yInterval)} – ${numberLabel(ymax, yInterval)}` +
       (visible.length ? "" : "; No samples in this X range.") +
-      (historyKind === "overview" ? " | Downsampled training history." : " | Latest 300 metric updates.") +
+      (historyKind === "overview" ? " | Downsampled training history." : " | Full metric history; no rolling window.") +
       ` Samples: ${numberLabel(sampleMin, xInterval)} – ${numberLabel(sampleMax, xInterval)} (${points.length} points).`;
   }
 
@@ -174,6 +174,7 @@ function createChart(containerId, historyKind, settingsContainerId = null) {
   resizeObserver.observe(canvas);
   return {
     destroy() { resizeObserver.disconnect(); },
+    setStatus(message) { caption.textContent = message; },
     update(data) {
       histories = data;
       for (const name of Object.keys(histories)) {

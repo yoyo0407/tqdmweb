@@ -28,7 +28,7 @@
 | Save、Schedule、Cancel Schedule | 立即請求保存、在指定完成步數保存，以及取消未觸發預訂 |
 | Checkpoint resume、step、optimizer、RNG state | 保存後可準確接續訓練；model weights 本身不足以還原這些狀態 |
 | Initial／total／started／completed | 接續進度、未知總數，以及區分正在處理與已完成項目 |
-| Latest Metrics、Recent History、Training History | 分別查看當前值、近期細節與整段趨勢；兩種 history 都限制記憶體 |
+| Latest Metrics、Full Metric History、Training History | 分別查看當前值、完整曲線與取樣趨勢；完整歷史不裁切，增量傳輸避免反覆重送全部資料 |
 | X／Y Axis、bounds、Reset Axes | 使用者已要求自訂座標軸；Reset 可恢復可讀範圍 |
 | CSV 與完整 Console log | CSV 保存數值指標；Console log 保存診斷輸出，兩者內容不同 |
 | Follow Tail、Copy Output | 閱讀舊輸出與複製診斷資訊 |

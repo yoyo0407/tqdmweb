@@ -4,6 +4,7 @@ const resourceView = createResourceView();
 let detectedPython = null;
 let jobId = null;
 const trainingView = createTrainingView({prefix: "training-", settingsContainer: "training-overview-settings",
+  readHistory: after => request(`/training-history?job_id=${jobId}&after=${after}`),
   send: (action, value) => request("/training-control", {method: "POST", headers: {"Content-Type": "application/json"},
     body: JSON.stringify({job_id: jobId, action, value})})});
 let busy = false;

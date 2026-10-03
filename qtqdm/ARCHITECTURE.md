@@ -4,7 +4,7 @@
 | --- | --- |
 | `index.html` | 顯示狀態與曲線，送出使用者指令 |
 | `charts.js` | 圖表設定、座標轉換、刻度與曲線繪製 |
-| `chart_history.py` | 每個數值指標的近期資料與總覽取樣 |
+| `chart_history.py` | 完整數值歷史、狀態 preview 與增量 paging |
 | `console.py` | 鏡像 Python stdout／stderr、保存完整 log、限制網頁輸出長度 |
 | `console.js` | 更新 Console Output、Follow Tail 與 Copy Output |
 | `web.py` | Qtqdm 入口，接合 progress、console capture 與 dashboard |
@@ -38,7 +38,7 @@ ProcessRunner 發現 `Qtqdm page: http://127.0.0.1:PORT/` 後，由 TrainingBrid
 
 NativePicker 用 Windows PowerShell 的 STA process 開啟系統 OpenFileDialog／FolderBrowserDialog。選取設定透過 stdin JSON 傳遞；回傳完整路徑，Cancel 回傳 null。App 不再提供 folder listing 或網頁 directory tree。只允許一個選擇視窗，App close 時結束自己的 dialog process。
 
-App 的 Basic 是選擇 script、Arguments、Run／Stop／Quit、Console、Training Dashboard。Advanced 是 learning rate、checkpoint schedule、recent chart、overview axis settings、capabilities，以及 environment、working directory、Restart Process／Force Stop、PID／exit code 與 System Resources。內部 Qtqdm page 不分 Basic／Advanced。選中的 script 預設以自己的 folder 作 working directory，偵測附近環境。
+App 的 Basic 是選擇 script、Arguments、Run／Stop／Quit、Console、Training Dashboard。Advanced 是 learning rate、checkpoint schedule、full metric history、overview axis settings、capabilities，以及 environment、working directory、Restart Process／Force Stop、PID／exit code 與 System Resources。內部 Qtqdm page 不分 Basic／Advanced。選中的 script 預設以自己的 folder 作 working directory，偵測附近環境。
 
 `Restart Process` 等待舊 process 結束後啟動新的 process。Qtqdm 只監控一次 run；model／optimizer 始終在 script 中。完整使用方式見 `../TQDMBOARD.md`。
 
@@ -50,7 +50,7 @@ Python 主執行緒負責訓練，背景 `ThreadingHTTPServer` 負責網頁請�
 
 `/state` 的 `charts` 依指標名稱提供 `recent` 與 `overview`。每個點是 `[經過秒數, 數值, 項目步數, set_postfix 更新編號]`，步數以當前已開始處理的項目計算，接續工作會保留原步數。文字、布林值及非有限數值不加入曲線，但仍保留在最新指標與 CSV。Loss 使用 `charts.loss`，與其他指標共用格式。
 
-Canvas 以實際 CSS 尺寸與 devicePixelRatio 設定 bitmap，ResizeObserver 在展開 Advanced 或改變視窗尺寸時重繪；destroy 在新 run reset 時釋放 observer。刻度精度依 tick spacing 計算，大步數不再使用 4 位有效數字裁切。Step／Update Index 使用整數刻度，Elapsed Time 保留小數。Caption 顯示座標範圍與實際 samples 區間；Recent History 保留最近 300 個 points，手動 X Min=0 不補出被裁掉的舊資料。
+Canvas 以實際 CSS 尺寸與 devicePixelRatio 設定 bitmap，ResizeObserver 在展開 Advanced 或改變視窗尺寸時重繪；destroy 在新 run reset 時釋放 observer。刻度精度依 tick spacing 計算，大步數不再使用 4 位有效數字裁切。Step／Update Index 使用整數刻度，Elapsed Time 保留小數。Caption 顯示座標範圍與實際 samples 區間；Full Metric History 保留所有數值 points，X Min=0 能顯示該 run 早期的資料。`charts.recent` 仍提供 300-point API preview，前端完整曲線改讀 `/history`。
 
 兩張圖各自持有 X 軸種類、Y 指標與範圍，預設使用步數／loss（沒有 loss 時選第一個數值指標）。設定只存在目前頁面，重新整理會恢復預設；圖表設定不送到訓練控制端。切換軸種類會清除該軸範圍，另一軸保持不變。指定範圍時裁切繪圖，不刪除歷史資料；Y 軸自動範圍依 X 範圍內的取樣點計算，沒有點時使用整段資料。
 
@@ -127,3 +127,9 @@ GPU 範例在正常完成或透過網頁提前停止後，由訓練端寫出 `.p
 - `../.venv/`：獨立 Python 與 GPU 套件環境。
 - `../requirements-gpu.txt`：可重建的 GPU 套件版本。
 - `../GPU_SETUP.md`：RTX 5060 的執行指令。
+
+## Complete history transport
+
+`Progress.history_since(after, limit)` 在 history lock 內以 update index 切出最多 2,000 次 updates，回傳 `charts`、`next_update`、`has_more`。每個 metric 的 full list 不裁切；所有 metric updates 與 cursor 在同一個鎖內提交，避免 HTTP 讀取時漏掉剛新增的 point。
+
+Standalone page 從 child `/history?after=...` 讀取。Board 的 TrainingBridge 每個 polling cycle 最多取得 4 pages，append 至自己的 cache，並由 Board `/training-history?job_id=...&after=...` 提供前端增量讀取。主 `/state` 只提供 bounded previews 與 `history_updates`。Child 結束後保留 Board 已收到的資料；job_id 改變才清空。前端只追加新增 points，refresh 時從 cursor 0 重建；舊 job 的延遲 response 不加入新 job。完整歷史的 RAM 使用量隨 run 長度成長，CSV 持續保存磁碟紀錄。

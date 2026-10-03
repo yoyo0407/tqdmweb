@@ -5,7 +5,7 @@ from threading import Lock
 from time import monotonic
 
 from .csv_log import CsvLog
-from .chart_history import ChartHistory
+from .chart_history import ChartHistory, history_page
 from .control import TrainingControl
 
 
@@ -55,16 +55,16 @@ class Progress:
         if self._csv_log is not None and values:
             self._csv_log.write(elapsed, self.started, values)
         self.metrics = {**self.metrics, **{key: str(value) for key, value in values.items()}}
-        self._metric_updates += 1
-        for name, value in values.items():
-            if isinstance(value, bool):
-                continue
-            try:
-                number = float(value)
-            except (TypeError, ValueError, OverflowError):
-                continue
-            if isfinite(number):
-                with self._history_lock:
+        with self._history_lock:
+            self._metric_updates += 1
+            for name, value in values.items():
+                if isinstance(value, bool):
+                    continue
+                try:
+                    number = float(value)
+                except (TypeError, ValueError, OverflowError):
+                    continue
+                if isfinite(number):
                     if name not in self._chart_history:
                         self._chart_history[name] = ChartHistory()
                     history = self._chart_history[name]
@@ -95,6 +95,11 @@ class Progress:
                 self.finished_at = monotonic()
             self._close_log()
 
+    def history_since(self, after=0, limit=2000):
+        with self._history_lock:
+            return history_page({name: history.full for name, history in self._chart_history.items()},
+                                after, self._metric_updates, limit)
+
     def _close_log(self):
         if self._csv_log is not None:
             self._csv_log.close()
@@ -113,6 +118,7 @@ class Progress:
                 state = "pause_requested"
         with self._history_lock:
             charts = {name: history.snapshot() for name, history in self._chart_history.items()}
+            history_updates = self._metric_updates
         now = self.finished_at if self.finished_at is not None else monotonic()
         elapsed = 0 if self.started_at is None else now - self.started_at
         rate = (self.completed - self.initial) / elapsed if elapsed > 0 else 0
@@ -120,6 +126,7 @@ class Progress:
         if self.total is not None and rate > 0:
             remaining = max(0, self.total - self.completed) / rate
         return {
+            "history_updates": history_updates,
             "description": self.description,
             "started": self.started,
             "completed": self.completed,

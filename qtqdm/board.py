@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import sys
 from threading import Event, Thread
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 import webbrowser
 
 from .board_files import python_environments
@@ -73,6 +73,10 @@ class TqdmBoard:
                         self.respond_json({"python_environments": python_environments(board.directory), "config": config or {
                             "script": str(script) if script.is_file() else "", "python": sys.executable,
                             "working_directory": str(board.directory), "arguments": ""}})
+                    elif route.path == "/training-history":
+                        query = parse_qs(route.query)
+                        self.respond_json(board.training.history_since(int(query.get("job_id", ["-1"])[0]),
+                                                                      int(query.get("after", ["0"])[0])))
                     else:
                         self.send_error(404)
                 except (OSError, ValueError) as error:

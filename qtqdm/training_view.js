@@ -1,5 +1,5 @@
 // Shared rendering behavior; each page owns its markup and layout.
-function createTrainingView({prefix = "", send, settingsContainer = null}) {
+function createTrainingView({prefix = "", send, settingsContainer = null, readHistory}) {
   const byId = id => document.getElementById(prefix + id);
   const seconds = value => value == null ? "—" : `${Math.round(value)} s`;
   let generation = 0;
@@ -11,6 +11,32 @@ function createTrainingView({prefix = "", send, settingsContainer = null}) {
   let pendingCommand = null;
   let overviewChart;
   let recentChart;
+  let fullHistories = {};
+  let historyCursor = 0;
+  let historyBusy = false;
+
+  async function loadHistory(target) {
+    if (!readHistory || historyBusy || historyCursor >= target) return;
+    const requestGeneration = generation;
+    historyBusy = true;
+    try {
+      while (historyCursor < target) {
+        const page = await readHistory(historyCursor);
+        if (requestGeneration !== generation) return;
+        if (page.next_update <= historyCursor) break;
+        for (const [name, points] of Object.entries(page.charts)) {
+          fullHistories[name] ??= {full: []};
+          fullHistories[name].full.push(...points);
+        }
+        historyCursor = page.next_update;
+        recentChart.update(fullHistories);
+      }
+    } catch (error) {
+      if (requestGeneration === generation) recentChart.setStatus(`History loading interrupted: ${error.message}. Retrying...`);
+    } finally {
+      if (requestGeneration === generation) historyBusy = false;
+    }
+  }
 
   function updateControls() {
     const ended = !connected || !controlState || controlState.finished || controlState.stop_requested;
@@ -135,7 +161,8 @@ function createTrainingView({prefix = "", send, settingsContainer = null}) {
     byId("metrics-section").hidden = Object.keys(data.metrics).length === 0;
     byId("loss-section").hidden = Object.keys(data.charts).length === 0;
     overviewChart.update(data.charts);
-    recentChart.update(data.charts);
+    recentChart.update(fullHistories);
+    loadHistory(data.history_updates || 0);
     if (data.state === "failed" && !errorShown) {
       errorShown = true;
       alert(data.error || "The task failed.");
@@ -147,12 +174,15 @@ function createTrainingView({prefix = "", send, settingsContainer = null}) {
     errorShown = rateInitialized = false;
     controlState = pendingCommand = null;
     connected = false;
+    fullHistories = {};
+    historyCursor = 0;
+    historyBusy = false;
     for (const id of ["control-message", "lr-current", "save-status", "save-schedule-status"]) byId(id).textContent = "";
     byId("lr-input").value = byId("save-step").value = "";
     overviewChart?.destroy();
     recentChart?.destroy();
     overviewChart = createChart(prefix + "chart-overview", "overview", settingsContainer);
-    recentChart = createChart(prefix + "chart-recent", "recent");
+    recentChart = createChart(prefix + "chart-recent", "full");
     updateControls();
   }
   reset();

@@ -19,7 +19,7 @@ class Qtqdm(Progress):
             description = desc
         super().__init__(items, total=total, description=description, csv_path=csv_path, initial=initial)
         self.open_browser = open_browser and os.environ.get("TQDMBOARD") != "1"
-        self._dashboard = Dashboard(self.snapshot, self.control.request)
+        self._dashboard = Dashboard(self.snapshot, self.control.request, self.history_since)
         self.console = ConsoleOutput(console_path)
         self._console_capture = ConsoleCapture(self.console) if capture_console else None
 

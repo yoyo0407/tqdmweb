@@ -4,12 +4,14 @@ import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Thread
+from urllib.parse import parse_qs, urlsplit
 
 
 class Dashboard:
-    def __init__(self, get_state, request_control):
+    def __init__(self, get_state, request_control, get_history=None):
         self.get_state = get_state
         self.request_control = request_control
+        self.get_history = get_history
         self.server = None
         self.url = None
 
@@ -36,6 +38,15 @@ class Dashboard:
                 self.respond(json.dumps(data).encode("utf-8"), "application/json; charset=utf-8", status)
 
             def do_GET(self):
+                route = urlsplit(self.path)
+                if route.path == "/history" and dashboard.get_history is not None:
+                    try:
+                        query = parse_qs(route.query)
+                        self.respond_json(dashboard.get_history(int(query.get("after", ["0"])[0]),
+                                                                int(query.get("limit", ["2000"])[0])))
+                    except ValueError as error:
+                        self.respond_json({"error": str(error)}, 400)
+                    return
                 if self.path == "/":
                     content, kind = page, "text/html; charset=utf-8"
                 elif self.path == "/charts.js":
