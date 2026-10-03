@@ -34,16 +34,18 @@ const wait=async(fn)=>{const end=Date.now()+15000;while(!await fn()){if(Date.now
  });
  await page.goto(url);
  await wait(async()=>await page.locator('#training-chart-overview canvas').isVisible());
+ assert.strictEqual(await page.locator('#tab-monitor').getAttribute('aria-selected'),'true');
+ await page.locator('#tab-run').click();
  assert(await page.locator('#arguments').isVisible());
- assert.strictEqual(await page.locator('#arguments').evaluate(el=>el.closest('#basic-section')!=null),true);
- assert.strictEqual(await page.locator('#advanced-section').getAttribute('open'),null);
+ assert.strictEqual(await page.locator('#arguments').evaluate(el=>el.closest('#run-panel')!=null),true);
+ await page.locator('#tab-monitor').click();
  const checkResolution=async id=>{
   await wait(async()=>page.locator(id).evaluate(c=>c.width===Math.round(c.clientWidth*devicePixelRatio)&&c.height===Math.round(c.clientHeight*devicePixelRatio)));
   const size=await page.locator(id).evaluate(c=>({bitmap:c.width,css:c.clientWidth,dpr:devicePixelRatio}));
   assert(size.bitmap>640);return size;
  };
  const basic=await checkResolution('#training-chart-overview canvas');
- await page.locator('#advanced-section > summary').click();
+ await page.locator('#full-history-section > summary').click();
  const recent=await checkResolution('#training-chart-recent canvas');
  const form=page.locator('#training-chart-recent form');
  await form.locator('select[name=y]').selectOption('score');
@@ -69,7 +71,7 @@ const wait=async(fn)=>{const end=Date.now()+15000;while(!await fn()){if(Date.now
  await form.locator('input[name=xmin]').fill('');await form.locator('button[type=submit]').click();
  await wait(async()=> (await page.locator('#training-chart-recent .chart-caption').innerText()).includes('Samples: 1 – 20,500 (20500 points)'));
  await page.reload();
- await page.locator('#advanced-section > summary').click();
+ await page.locator('#full-history-section > summary').click();
  await wait(async()=> (await page.locator('#training-chart-recent .chart-caption').innerText()).includes('Samples: 1 – 20,500 (20500 points)'));
  await page.setViewportSize({width:390,height:844});
  await wait(async()=>page.locator('#training-chart-recent canvas').evaluate(c=>c.width===Math.round(c.clientWidth*devicePixelRatio)));
@@ -79,7 +81,7 @@ const wait=async(fn)=>{const end=Date.now()+15000;while(!await fn()){if(Date.now
  await page.screenshot({path:path.join(root,'runs','chart-auto-range.png'),fullPage:true});
  await page.locator('#training-chart-recent canvas').screenshot({path:path.join(root,'runs','chart-recent.png')});
  assert.strictEqual(errors.length,0,errors.join('\n'));
- console.log(JSON.stringify({result:'PASS',basic,recent,checks:['Arguments in Basic','DPR 2 bitmap','Advanced open resize','accurate large Step labels','distinct tiny value labels','full 20000-point history','updates retain first point','reload restores 20500 points','manual bounds and sample range','mobile resize and no overflow']}));
+ console.log(JSON.stringify({result:'PASS',basic,recent,checks:['Arguments in Run','DPR 2 bitmap','Monitor details open resize','accurate large Step labels','distinct tiny value labels','full 20000-point history','updates retain first point','reload restores 20500 points','manual bounds and sample range','mobile resize and no overflow']}));
 }finally{
  if(url&&app.exitCode===null){await fetch(url+'shutdown',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).catch(()=>{});await wait(()=>app.exitCode!==null);}
  if(browser)await browser.close();

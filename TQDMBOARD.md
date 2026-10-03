@@ -28,43 +28,52 @@ PowerShell 使用：
 
 `--directory "C:\path\to\project"` 可指定初始 folder；`--port 8765` 指定固定 port；`--no-browser` 不自動開啟瀏覽器。
 
-## Basic
+## Tabs
 
-1. 按 Choose Script，使用 Windows 原生選檔視窗選擇 `.py`。Cancel 保留目前設定。
+外部 Board 依操作目的分成四個 tabs，預設 Monitor。上方共用 Current Script、Process State、System Resources 與 Quit App，顯示目前 process，切到 History 也不改變。
+
+| Tab | 內容 |
+| --- | --- |
+| Run | Script、Python Environment、Working Directory、Arguments、Run／Restart Process |
+| Monitor | Progress、Metrics、曲線、Pause／Resume／Stop、Save Checkpoint、Stop Process／Force Stop |
+| Console | 目前 process 的 stdout／stderr、Follow Tail、Copy Output、完整 Log Path |
+| History | Recorded Run · Read-only，內含 Overview／Charts／Console |
+
+1. 在 Run 按 Choose Script，使用 Windows 原生選檔視窗選擇 `.py`。Cancel 保留目前設定。
 2. Script 所在 folder 自動成為 Working Directory，並偵測附近 Python environment。
-3. 在 Basic 的 Arguments 填入所需 command-line arguments，再按 Run；Basic 顯示 process state、stdout／stderr、progress、metrics、Training History，以及 Pause／Stop／Save Checkpoint。
-4. Stop Process 結束 child process；Quit App 關閉 App。Script 結束後 App 仍可選擇下一個 script。
+3. 填入 Arguments 後按 Run，接受啟動後切換至 Monitor；Script 結束後 App 仍可選擇下一個 script。
+4. Monitor 的 Training Controls 展開 Learning Rate／Checkpoint Schedule；Chart Settings 調整 Overview 的 axes／smoothing；Full Metric History 展開完整曲線及自己的設定。
+5. Console 顯示目前 process 的輸出，完整 log 在 `runs/tqdmboard/`。一般 Python script 也能執行；training controls 需要 script 接入 Qtqdm。
 
-Process Console 提供 Follow Tail、Copy Output，完整 log 存在 `runs/tqdmboard/`。一般 Python script 也能執行；training controls 需要 script 接入 Qtqdm。
-
-## Advanced
-
-Advanced 預設收合，包含 Python Executable、Working Directory、Restart Process、Force Stop、PID／exit code 和 System Resources；training 的 Learning Rate、Checkpoint Schedule、Full Metric History、capabilities 與 Training History Axes 也放在此處。Choose Python／Choose Directory 同樣開啟系統視窗；也可手動填入這兩個欄位。
+Tabs 只切換 DOM visibility，不做頁面 navigation、不重新建立 Monitor，也不發送 training／process commands。Monitor 和即時 Console 在背景持續更新；曲線設定跨 tab 保留，新 process 才 reset。支援左右方向鍵、Home／End 切換 tabs。
 
 兩張圖表各有 Smoothing：None (Raw)、EMA 0.6／0.9／0.99。EMA 的 weight 越大，曲線越平滑；公式為 `value = weight * previous + (1 - weight) * current`，首點使用原始值。只改顯示，不修改訓練、CSV 或儲存的數據。Overview 對其 downsampled points 計算 EMA；Full Metric History 對完整 points 計算，兩張圖的平滑曲線可能不同。
 
 ## Run History
 
-Basic 的 Run History 選擇一次執行後按 View Record，可查看當時 Python／script／arguments／working directory、時間、exit code、Console、最後 metrics 與曲線。Live View 返回目前執行；回看模式停用 process 與 training controls，避免誤操作正在執行的程式。Refresh Records 更新清單。
+History 選擇一次執行後按 View Record。Overview 顯示當時 Python／script／arguments／working directory、時間、exit code、最後 metrics／checkpoint；Charts 顯示歷史曲線及自己的 axes／smoothing；Console 顯示該次執行的輸出。Refresh Records 更新清單。
+
+History 使用獨立的 `board_history.js`、chart instances、Console view、record cursor 和 request generation。它只讀取紀錄 APIs，不影響目前 process、Monitor／Console 更新或其控制狀態；選取較慢的舊紀錄回應不會覆蓋後來的選擇。回到 Monitor 即可操作目前訓練，不需要 Live View 切換。正在執行的 run 也能回看，此時呈現按 View Record 當下保存的 snapshot，並非另一份 live monitor。
 
 資料庫保存在 `runs/tqdmboard/records.sqlite3`，完整 Console log 在同一 folder；Console viewer 顯示末尾約 64 KB。完整 numeric metric samples 按 update index 分頁讀取，重開 App 仍可回看。`--records-path` 可指定其他 SQLite 路徑。紀錄從此版本開始建立，不會自動還原舊 logs 的 arguments 或結果，也不包含 script 原始碼、model 檔案副本或 resource history；checkpoint 路徑仍指向 script 原本儲存的位置。
 
 一般 Python scripts 保存指令、exit code 與 Console。使用 `with Qtqdm(...)` 的 scripts 在離開 context 時直接保存完整 final snapshot 與歷史，避免短程式在 polling 之間結束而漏掉結果；不用 context 時請呼叫 `close()`。Force Stop、crash 或磁碟寫入失敗只能保留已保存資料；沒有正常退出紀錄時標示 No exit recorded，training 顯示最後捕捉的結果。
 
-Basic 的 Arguments 使用原本 command-line 格式，例如 `--steps 100 --learning-rate 0.03 --momentum 0.6`。App 以 argument list 和 shell=False 啟動，含空白的單一 argument 使用引號。
+Run 的 Arguments 使用原本 command-line 格式，例如 `--steps 100 --learning-rate 0.03 --momentum 0.6`。App 以 argument list 和 shell=False 啟動，含空白的單一 argument 使用引號。
 
 Restart Process 先要求舊 script 停止，等 exit 後以現在的 launcher settings 啟動新 process，重新載入程式碼。Force Stop 立即終止 process tree，不保證保存新的 checkpoint。沒有 Qtqdm 內部的 Training Restart 或 hyperparameter 重啟表單。
 
 Qtqdm-compatible script 的狀態由 Board 自己的 UI 顯示。App 設定 PYTHONPATH 讓外部 scripts 找到 Qtqdm，並設定 TQDMBOARD=1 避免額外開啟 browser tab。GPU 範例保持完成／停止後的頁面供閱讀；下一次執行由 Board 啟動新 process。
 
-只有外部 Board 分成 Basic／Advanced。內部 Qtqdm 獨立頁面直接呈現所有功能，不分組；兩個頁面共用 rendering behavior 與 chart code，各自擁有 markup、layout 和資料入口。Board 沒有 iframe，Process Console 顯示完整 child stdout／stderr。
+只有外部 Board 使用 Run／Monitor／Console／History tabs。內部 Qtqdm 獨立頁面直接呈現所有功能，不分組；兩個頁面共用 rendering behavior 與 chart code，各自擁有 markup、layout 和資料入口。Board 沒有 iframe，Process Console 顯示完整 child stdout／stderr。
 
 ## Code architecture
 
 ```text
 tqdmboard.cmd / tqdmboard.py
     └─ TqdmBoard (board.py): app HTTP server
-         ├─ board.html / board.js: launcher + training UI
+         ├─ board.html / board.js: tabs + launcher + live training UI
+         ├─ board_history.js: independent read-only records UI
          ├─ training_view.js / charts.js: shared rendering behavior
          ├─ TrainingBridge (board_training.py): training state cache / controls
          ├─ RunRecords (board_records.py): SQLite run metadata / raw samples
@@ -103,10 +112,10 @@ App 顯示整台電腦的 CPU utilization、已用／總 RAM，以及 NVIDIA GPU
 & '.\.venv\Scripts\python.exe' -m unittest discover -s tests -v
 ```
 
-測試涵蓋 native dialog initialization／selection／Cancel、Windows argument quoting、空白路徑、working directory、stdout／stderr、process exit／restart／force stop、初始化期間的 Stop，以及單次 training controls、control relay、child HTTP errors、stale job 拒絕、斷線資料保留和慢回應的隔離。網頁測試另驗證 RTX 5060 訓練、Basic／Advanced、單次 Qtqdm 與 Restart Process。
+測試涵蓋 native dialog initialization／selection／Cancel、Windows argument quoting、空白路徑、working directory、stdout／stderr、process exit／restart／force stop、初始化期間的 Stop，以及單次 training controls、control relay、child HTTP errors、stale job 拒絕、斷線資料保留和慢回應的隔離。網頁測試另驗證 RTX 5060 訓練、四個 tabs、單次 Qtqdm 與 Restart Process。
 
-Chart display regression test：安裝 Node.js／Playwright 並有 Edge 時，從專案根目錄執行 `node tests/chart_ui_smoke.cjs`。測試 DPR 2、Advanced 展開、resize、大步數／微小數值刻度、手動範圍與 Arguments 的 Basic 位置；使用固定資料，不執行模型訓練。
+Chart display regression test：安裝 Node.js／Playwright 並有 Edge 時，從專案根目錄執行 `node tests/chart_ui_smoke.cjs`。測試 DPR 2、Monitor details 展開、resize、大步數／微小數值刻度、手動範圍與 Arguments 的 Run 位置；使用固定資料，不執行模型訓練。
 
 Full Metric History 保留整個 run 的數值更新；追加 update 不裁掉早期 points。重新整理以 incremental history API 重建完整曲線。Board 保留收到的歷史，child process 結束後仍可查看；開始新 process 時才清空前一個 job。
 
-`node tests/board_records_ui_smoke.cjs` 驗證短程式的 3501 點 final flush、重開 App 的完整紀錄、回看期間的控制隔離、EMA 不修改 raw data、重新整理、多分頁及最後分頁關閉後的 process／App 退出。
+`node tests/board_records_ui_smoke.cjs` 驗證短程式的 3501 點 final flush、重開 App 的完整紀錄、回看期間 training steps 持續增加、Monitor chart settings 保留、過期 record response 隔離、tabs 不發送控制命令、EMA 不修改 raw data、重新整理、多分頁及最後分頁關閉後的 process／App 退出。

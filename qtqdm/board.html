@@ -1,155 +1,205 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>tqdmboard</title>
-  <style>
-    body { font: 16px system-ui, sans-serif; max-width: 1000px; margin: 24px auto; padding: 0 16px; color: #202124; }
-    [hidden] { display: none !important; }
-    button, input { font: inherit; padding: 8px; }
-    input[type=text] { width: 100%; box-sizing: border-box; }
-    label { display: block; margin: 12px 0; }
-    h2 { font-size: 1.15rem; }
-    summary { cursor: pointer; font-weight: 600; padding: 12px 0; }
-    .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-    #record-list { max-width: 100%; min-width: 0; }
-    .hint { font-size: 0.85rem; color: #59636e; overflow-wrap: anywhere; }
-    #console-output { max-height: 280px; min-height: 100px; overflow: auto; border: 1px solid #b8c2cc; padding: 12px; font: 13px/1.5 monospace; white-space: pre; }
-    #message, #process-status { min-height: 1.2em; overflow-wrap: anywhere; }
-    progress { width: 100%; height: 24px; }
-    dl { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; }
-    dt { color: #59636e; }
-    dd { margin: 0 0 12px; font-variant-numeric: tabular-nums; }
-    .chart-canvas { display: block; width: 100%; height: 320px; box-sizing: border-box; border: 1px solid #d8dee4; border-radius: 6px; }
-    .chart-settings { padding: 12px; background: #f5f7fa; border-radius: 6px; margin: 12px 0; }
-    .axis-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 8px 0; }
-    .axis-row label { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; }
-    .axis-row input { width: 92px; }
-    .axis-row select { width: 138px; }
-    .chart-error { color: #b42318; font-size: 0.85rem; margin: 8px 0 0; }
-    .chart-caption { overflow-wrap: anywhere; }
-  </style>
-</head>
-<body>
-  <h1>tqdmboard</h1>
-  <section id="basic-section">
-    <h2>Basic</h2>
-    <form id="launch-form">
-      <label>Python Script<input id="script" type="text" readonly required></label>
-      <label>Arguments<input id="arguments" type="text" placeholder="--steps 20000 --learning-rate 0.0001"></label>
-      <div class="controls">
-        <button id="choose-script" type="button">Choose Script...</button>
-        <button id="run" type="submit">Run</button>
-        <button id="stop-process" type="button" disabled>Stop Process</button>
-        <button id="quit" type="button">Quit App</button>
-      </div>
-    </form>
-    <p id="message" role="status"></p>
-    <p id="process-status" role="status"></p>
-    <section>
-      <h2>Run History</h2>
-      <div class="controls">
-        <select id="record-list" aria-label="Run History"><option value="">Select a run...</option></select>
-        <button id="view-record" type="button">View Record</button>
-        <button id="live-view" type="button">Live View</button>
-        <button id="refresh-records" type="button">Refresh Records</button>
-      </div>
-      <p id="record-status" class="hint" role="status">Live View</p>
-      <pre id="record-config" class="hint" style="white-space: pre-wrap" hidden></pre>
-    </section>
-    <section>
-      <h2>Process Console</h2>
-      <div class="controls">
-        <label><input id="console-follow" type="checkbox" checked> Follow Tail</label>
-        <button id="console-copy" type="button">Copy Output</button>
-        <span id="console-copy-status" class="hint" role="status"></span>
-      </div>
-      <pre id="console-output" role="log" aria-label="Process stdout and stderr" tabindex="0">Waiting for stdout / stderr...</pre>
-    </section>
-    <section id="training-section" hidden>
-  <h1 id="training-description">Progress</h1>
-  <div id="training-state">Waiting...</div>
-  <progress id="training-bar"></progress>
-  <div class="controls">
-    <button id="training-pause" type="button">Pause</button>
-    <button id="training-stop" type="button">Stop</button>
-    <button id="training-save" type="button" hidden>Save Checkpoint</button>
-  </div>
-  <p id="training-control-message" class="hint" role="status"></p>
-  <p id="training-save-status" class="hint" role="status"></p>
-  <dl>
-    <div><dt>Progress</dt><dd id="training-started">0</dd></div>
-    <div><dt>Completed</dt><dd id="training-completed">0</dd></div>
-    <div><dt>Rate</dt><dd id="training-rate">—</dd></div>
-    <div><dt>Elapsed</dt><dd id="training-elapsed">0 s</dd></div>
-    <div><dt>Remaining</dt><dd id="training-remaining">—</dd></div>
-  </dl>
-  <section id="training-metrics-section" hidden>
-    <h2>Metrics</h2>
-    <dl id="training-metrics"></dl>
-  </section>
-  <section id="training-loss-section" hidden>
-    <h2>Training History</h2>
-    <div id="training-chart-overview"></div>
-  </section>
-    </section>
-  </section>
-  <details id="advanced-section">
-    <summary>Advanced</summary>
-    <section id="training-settings" hidden>
-      <h2>Training Settings</h2>
-  <form id="training-lr-form" class="controls" hidden>
-    <label for="training-lr-input">Learning rate</label>
-    <input id="training-lr-input" type="number" step="any" min="0" required>
-    <button id="training-lr-apply" type="submit">Apply</button>
-    <span id="training-lr-current" class="hint"></span>
-  </form>
-  <form id="training-save-form" class="controls" hidden>
-    <label for="training-save-step">Checkpoint Step</label>
-    <input id="training-save-step" type="number" min="1" step="1" required>
-    <button id="training-save-schedule" type="submit">Schedule Checkpoint</button>
-    <button id="training-save-cancel" type="button" hidden>Cancel Schedule</button>
-  </form>
-  <p id="training-save-schedule-status" class="hint" role="status"></p>
-    <h2>Full Metric History</h2>
-    <div id="training-chart-recent"></div>
-    <p class="hint">Leave bounds empty for autoscaling. Switching an axis resets its bounds. Reloading restores defaults.</p>
-    <p id="training-capabilities" class="hint"></p>
-      <h2>Training History Axes</h2>
-      <div id="training-overview-settings"></div>
-    </section>
-    <section>
-      <h2>Launch Settings</h2>
-      <label>Python Executable<input id="python" type="text" list="environments" required form="launch-form"></label>
-      <datalist id="environments"></datalist>
-      <div class="controls">
-        <button id="choose-python" type="button">Choose Python...</button>
-        <button id="autodetect" type="button">Use Detected Environment</button>
-      </div>
-      <label>Working Directory<input id="working-directory" type="text" required form="launch-form"></label>
-      <button id="choose-directory" type="button">Choose Directory...</button>
-      <div class="controls">
-        <button id="restart-process" type="button">Restart Process</button>
-        <button id="force-stop" type="button" disabled>Force Stop</button>
-      </div>
-      <p class="hint">Restart Process starts a new execution of the script. Qtqdm monitors one run per instance.</p>
-      <p id="process-details" class="hint"></p>
-      <p id="console-status" class="hint"></p>
-    </section>
-    <section>
-      <h2>System Resources</h2>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>tqdmboard</title>
+    <style>
+      body { font: 16px system-ui, sans-serif; max-width: 1000px; margin: 24px auto; padding: 0 16px; color: #202124; }
+      [hidden] { display: none !important; }
+      button, input { font: inherit; padding: 8px; }
+      input[type=text] { width: 100%; box-sizing: border-box; }
+      label { display: block; margin: 12px 0; }
+      h2 { font-size: 1.15rem; }
+      summary { cursor: pointer; font-weight: 600; padding: 12px 0; }
+      .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+      #record-list { max-width: 100%; min-width: 0; }
+      .hint { font-size: 0.85rem; color: #59636e; overflow-wrap: anywhere; }
+      #console-output, #record-console-output { max-height: 280px; min-height: 100px; overflow: auto; border: 1px solid #b8c2cc; padding: 12px; font: 13px/1.5 monospace; white-space: pre; }
+      #message, #process-status { min-height: 1.2em; overflow-wrap: anywhere; }
+      progress { width: 100%; height: 24px; }
+      dl { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; }
+      dt { color: #59636e; }
+      dd { margin: 0 0 12px; font-variant-numeric: tabular-nums; }
+      .chart-canvas { display: block; width: 100%; height: 320px; box-sizing: border-box; border: 1px solid #d8dee4; border-radius: 6px; }
+      .chart-settings { padding: 12px; background: #f5f7fa; border-radius: 6px; margin: 12px 0; }
+      .axis-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 8px 0; }
+      .axis-row label { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; }
+      .axis-row input { width: 92px; }
+      .axis-row select { width: 138px; }
+      .chart-error { color: #b42318; font-size: 0.85rem; margin: 8px 0 0; }
+      .chart-caption { overflow-wrap: anywhere; }
+      [role=tablist] { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
+      [role=tab][aria-selected=true] { font-weight: 700; border-bottom: 3px solid #1769e0; }
+      #current-script { overflow-wrap: anywhere; }
+    </style>
+    </head>
+      <body>
+      <header>
+      <h1>tqdmboard</h1>
+      <p id="current-script">Current Script: —</p>
+      <p id="process-status" role="status"></p>
+      <button id="quit" type="button">Quit App</button>
+      <details open><summary>System Resources</summary>
       <p class="hint">System-wide usage, including other applications.</p>
       <p id="resource-cpu">CPU: Waiting...</p>
       <p id="resource-ram">RAM: Waiting...</p>
       <div id="resource-gpus"></div>
       <p id="resource-status" class="hint" role="status"></p>
+
+    </details>
+      <p id="message" role="status"></p>
+    </header>
+      <nav id="main-tabs" role="tablist" aria-label="Board sections">
+      <button id="tab-run" type="button" role="tab" aria-controls="run-panel" aria-selected="false" tabindex="-1">Run</button>
+      <button id="tab-monitor" type="button" role="tab" aria-controls="monitor-panel" aria-selected="true">Monitor</button>
+      <button id="tab-console" type="button" role="tab" aria-controls="console-panel" aria-selected="false" tabindex="-1">Console</button>
+      <button id="tab-history" type="button" role="tab" aria-controls="history-panel" aria-selected="false" tabindex="-1">History</button>
+    </nav>
+    <section id="run-panel" role="tabpanel" aria-labelledby="tab-run" hidden>
+      <form id="launch-form">
+        <label>Python Script<input id="script" type="text" readonly required></label>
+        <button id="choose-script" type="button">Choose Script...</button>
+        <label>Arguments<input id="arguments" type="text" placeholder="--steps 20000 --learning-rate 0.0001"></label>
+        <h2>Launch Settings</h2>
+        <label>Python Executable<input id="python" type="text" list="environments" required form="launch-form"></label>
+        <datalist id="environments"></datalist>
+        <div class="controls">
+          <button id="choose-python" type="button">Choose Python...</button>
+          <button id="autodetect" type="button">Use Detected Environment</button>
+        </div>
+        <label>Working Directory<input id="working-directory" type="text" required form="launch-form"></label>
+        <button id="choose-directory" type="button">Choose Directory...</button>
+
+        <div class="controls">
+          <button id="run" type="submit">Run</button>
+          <button id="restart-process" type="button">Restart Process</button>
+        </div>
+        <p class="hint">Restart Process starts a new execution with these settings.</p>
+      </form>
     </section>
-  </details>
-  <script src="/console.js"></script>
-  <script src="/resources.js"></script>
-  <script src="/charts.js"></script>
-  <script src="/training_view.js"></script>
-  <script src="/board.js"></script>
-</body>
+    <section id="monitor-panel" role="tabpanel" aria-labelledby="tab-monitor">
+      <div class="controls">
+        <button id="stop-process" type="button" disabled>Stop Process</button>
+        <button id="force-stop" type="button" disabled>Force Stop</button>
+      </div>
+      <p id="process-details" class="hint"></p>
+      <p id="monitor-empty" class="hint">Run a Qtqdm script to monitor training.</p>
+      <section id="training-section" hidden>
+        <h1 id="training-description">Progress</h1>
+        <div id="training-state">Waiting...</div>
+        <progress id="training-bar"></progress>
+        <div class="controls">
+          <button id="training-pause" type="button">Pause</button>
+          <button id="training-stop" type="button">Stop</button>
+          <button id="training-save" type="button" hidden>Save Checkpoint</button>
+        </div>
+        <p id="training-control-message" class="hint" role="status"></p>
+        <p id="training-save-status" class="hint" role="status"></p>
+        <dl>
+          <div><dt>Progress</dt><dd id="training-started">0</dd></div>
+          <div><dt>Completed</dt><dd id="training-completed">0</dd></div>
+          <div><dt>Rate</dt><dd id="training-rate">—</dd></div>
+          <div><dt>Elapsed</dt><dd id="training-elapsed">0 s</dd></div>
+          <div><dt>Remaining</dt><dd id="training-remaining">—</dd></div>
+        </dl>
+        <section id="training-metrics-section" hidden>
+          <h2>Metrics</h2>
+          <dl id="training-metrics"></dl>
+        </section>
+        <section id="training-loss-section" hidden>
+          <h2>Training History</h2>
+          <div id="training-chart-overview"></div>
+        </section>
+      </section>
+      <section id="training-settings" hidden>
+        <details data-live-controls><summary>Training Controls</summary>
+          <form id="training-lr-form" class="controls" hidden>
+            <label for="training-lr-input">Learning rate</label>
+            <input id="training-lr-input" type="number" step="any" min="0" required>
+            <button id="training-lr-apply" type="submit">Apply</button>
+            <span id="training-lr-current" class="hint"></span>
+          </form>
+          <form id="training-save-form" class="controls" hidden>
+            <label for="training-save-step">Checkpoint Step</label>
+            <input id="training-save-step" type="number" min="1" step="1" required>
+            <button id="training-save-schedule" type="submit">Schedule Checkpoint</button>
+            <button id="training-save-cancel" type="button" hidden>Cancel Schedule</button>
+          </form>
+          <p id="training-save-schedule-status" class="hint" role="status"></p>
+        </details>
+        <details id="full-history-section"><summary>Full Metric History</summary>
+          <div id="training-chart-recent"></div>
+          <p class="hint">Leave bounds empty for autoscaling. Switching an axis resets its bounds. Reloading restores defaults.</p>
+          <p id="training-capabilities" class="hint"></p>
+        </details>
+        <details id="overview-settings-section"><summary>Chart Settings</summary>
+          <div id="training-overview-settings"></div>
+        </details>
+      </section>
+
+    </section>
+    <section id="console-panel" role="tabpanel" aria-labelledby="tab-console" hidden>
+      <section>
+        <h2>Process Console</h2>
+        <div class="controls">
+          <label><input id="console-follow" type="checkbox" checked> Follow Tail</label>
+          <button id="console-copy" type="button">Copy Output</button>
+          <span id="console-copy-status" class="hint" role="status"></span>
+        </div>
+        <pre id="console-output" role="log" aria-label="Process stdout and stderr" tabindex="0">Waiting for stdout / stderr...</pre>
+        <p id="console-status" class="hint"></p>
+      </section>
+
+    </section>
+    <section id="history-panel" role="tabpanel" aria-labelledby="tab-history" hidden>
+      <h2>Run History</h2>
+      <div class="controls">
+        <select id="record-list" aria-label="Run History"><option value="">Select a run...</option></select>
+        <button id="view-record" type="button">View Record</button>
+        <button id="refresh-records" type="button">Refresh Records</button>
+      </div>
+      <p id="record-status" class="hint" role="status">Select a recorded run. Current training continues in Monitor.</p>
+      <div id="record-content" hidden>
+        <nav id="history-tabs" role="tablist" aria-label="Record sections">
+          <button id="tab-record-overview" type="button" role="tab" aria-controls="record-overview" aria-selected="true">Overview</button>
+          <button id="tab-record-charts" type="button" role="tab" aria-controls="record-charts" aria-selected="false" tabindex="-1">Charts</button>
+          <button id="tab-record-console" type="button" role="tab" aria-controls="record-console" aria-selected="false" tabindex="-1">Console</button>
+        </nav>
+        <section id="record-overview" role="tabpanel" aria-labelledby="tab-record-overview">
+          <h2>Recorded Run · Read-only</h2>
+          <pre id="record-config" class="hint" style="white-space: pre-wrap"></pre>
+          <dl id="record-summary"></dl>
+          <h2>Recorded Metrics</h2>
+          <dl id="record-metrics"></dl>
+        </section>
+        <section id="record-charts" role="tabpanel" aria-labelledby="tab-record-charts" hidden>
+          <p id="record-chart-status" class="hint" role="status"></p>
+          <h2>Training History</h2>
+          <div id="record-chart-overview"></div>
+          <h2>Full Metric History</h2>
+          <div id="record-chart-full"></div>
+        </section>
+        <section id="record-console" role="tabpanel" aria-labelledby="tab-record-console" hidden>
+          <section>
+            <h2>Recorded Console</h2>
+            <div class="controls">
+              <label><input id="record-console-follow" type="checkbox" checked> Follow Tail</label>
+              <button id="record-console-copy" type="button">Copy Output</button>
+              <span id="record-console-copy-status" class="hint" role="status"></span>
+            </div>
+            <pre id="record-console-output" role="log" aria-label="Process stdout and stderr" tabindex="0">Waiting for stdout / stderr...</pre>
+            <p id="record-console-status" class="hint"></p>
+          </section>
+
+        </section>
+      </div>
+    </section>
+    <script src="/console.js"></script>
+    <script src="/resources.js"></script>
+    <script src="/charts.js"></script>
+    <script src="/training_view.js"></script>
+    <script src="/board_history.js"></script>
+    <script src="/board.js"></script>
+  </body>
 </html>

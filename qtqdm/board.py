@@ -36,6 +36,7 @@ class TqdmBoard:
     def start(self):
         board = self
         assets = {"/": ("board.html", "text/html"), "/board.js": ("board.js", "text/javascript"),
+                  "/board_history.js": ("board_history.js", "text/javascript"),
                   "/resources.js": ("resources.js", "text/javascript"),
                   "/console.js": ("console.js", "text/javascript"),
                   "/charts.js": ("charts.js", "text/javascript"),

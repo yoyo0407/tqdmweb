@@ -1,25 +1,31 @@
-function createConsoleView() {
-  const output = document.getElementById("console-output");
-  const follow = document.getElementById("console-follow");
-  const status = document.getElementById("console-status");
+function createConsoleView({prefix = ""} = {}) {
+  const byId = id => document.getElementById(prefix + id);
+  const output = byId("console-output");
+  const follow = byId("console-follow");
+  const status = byId("console-status");
   let version = -1;
 
   follow.onchange = () => {
     if (follow.checked) output.scrollTop = output.scrollHeight;
   };
-  document.getElementById("console-copy").onclick = async () => {
+  new ResizeObserver(() => {
+    if (follow.checked) output.scrollTop = output.scrollHeight;
+  }).observe(output);
+  byId("console-copy").onclick = async () => {
     try {
       await navigator.clipboard.writeText(output.textContent);
-      document.getElementById("console-copy-status").textContent = "Copied visible output.";
+      byId("console-copy-status").textContent = "Copied visible output.";
     } catch (error) {
-      document.getElementById("console-copy-status").textContent = `Copy failed: ${error.message}`;
+      byId("console-copy-status").textContent = `Copy failed: ${error.message}`;
     }
   };
 
   return {
     reset() {
       version = -1;
-      document.getElementById("console-copy-status").textContent = "";
+      byId("console-copy-status").textContent = "";
+      output.textContent = "Waiting for stdout / stderr...";
+      status.textContent = "";
     },
     update(data) {
       if (version === data.version) return;

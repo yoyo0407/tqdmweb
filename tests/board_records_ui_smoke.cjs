@@ -47,16 +47,19 @@ const config = arguments => ({script,python:path.join(root,'.venv','Scripts','py
   assert.strictEqual(record.training.data.history_updates,3501);
   await post('shutdown',{});await wait(()=>app.exitCode!==null);
   await start();await page.goto(url);
+  await page.locator('#tab-history').click();
   await page.locator('#record-list').selectOption(first.id);
   await page.locator('#view-record').click();
-  await page.locator('#advanced-section > summary').click();
-  await wait(async()=> (await page.locator('#training-chart-recent .chart-caption').innerText()).includes('(3501 points)'));
-  assert(await page.locator('#training-pause').isDisabled());
+  await page.locator('#tab-record-charts').click();
+  await wait(async()=> (await page.locator('#record-chart-full .chart-caption').innerText()).includes('(3501 points)'));
+  assert.strictEqual(await page.locator('#history-panel button').filter({hasText:'Stop'}).count(),0);
   assert((await page.locator('#record-config').innerText()).includes(script));
-  assert((await page.locator('#console-output').innerText()).includes('result=finished'));
-  const smoothing=page.locator('#training-chart-recent select[name=smoothing]');
+  await page.locator('#tab-record-console').click();
+  assert((await page.locator('#record-console-output').innerText()).includes('result=finished'));
+  await page.locator('#tab-record-charts').click();
+  const smoothing=page.locator('#record-chart-full select[name=smoothing]');
   await smoothing.selectOption('0.9');
-  await wait(async()=> (await page.locator('#training-chart-recent .chart-caption').innerText()).includes('EMA 0.9'));
+  await wait(async()=> (await page.locator('#record-chart-full .chart-caption').innerText()).includes('EMA 0.9'));
   const values=await page.evaluate(()=> {
     const raw=[[0,0,1,1],[1,10,2,2],[2,0,3,3]];
     const smooth=smoothChartPoints(raw,0.6);
@@ -65,13 +68,58 @@ const config = arguments => ({script,python:path.join(root,'.venv','Scripts','py
   assert.deepStrictEqual(values.raw.map(p=>p[1]),[0,10,0]);
   assert.deepStrictEqual(values.smooth.map(p=>p[1]),[0,4,2.4]);
   await smoothing.selectOption('0');
-  assert((await page.locator('#training-chart-recent .chart-caption').innerText()).includes('Raw data.'));
+  assert((await page.locator('#record-chart-full .chart-caption').innerText()).includes('Raw data.'));
   await post('run',config('--steps 100000 --delay 0.005'));
   await wait(async()=> (await (await fetch(url+'state')).json()).training.connected);
-  assert(await page.locator('#training-stop').isDisabled());
-  assert(await page.locator('#stop-process').isDisabled());
-  await page.locator('#live-view').click();
+  const initialState = await (await fetch(url+'state')).json();
+  const currentJob = initialState.job_id;
+  const startStep = initialState.training.data.completed;
+  const commands = [];
+  page.on('request', r => {
+    if (r.method()==='POST' && /\/(training-control|run|restart|stop|force-stop|shutdown)$/.test(new URL(r.url()).pathname)) commands.push(r.url());
+  });
+  await page.locator('#tab-monitor').click();
+  await page.locator('#full-history-section > summary').click();
+  await page.locator('#training-chart-recent select[name=smoothing]').selectOption('0.6');
+  await page.locator('#tab-history').click();
+  await page.locator('#view-record').click();
+  await wait(async()=> (await page.locator('#record-chart-full .chart-caption').innerText()).includes('(3501 points)'));
+  await wait(async()=> Number(await page.locator('#training-completed').innerText())>=startStep+50);
+  await sleep(3500);assert.strictEqual(app.exitCode,null,'History must not trigger last-tab shutdown');
+  const during = await (await fetch(url+'state')).json();
+  assert.strictEqual(during.job_id,currentJob);
+  assert.strictEqual(during.running,true);
+  assert.strictEqual(during.training.data.control.pause_requested,false);
+  assert.strictEqual(during.training.data.control.stop_requested,false);
+  assert(during.training.data.completed>startStep);
+  // A delayed earlier record cannot replace a more recent selection.
+  await page.locator('#refresh-records').click();
+  const currentRecord=during.record_id;
+  await wait(async()=> await page.locator(`#record-list option[value="${currentRecord}"]`).count()===1);
+  await page.route('**/record?id='+first.id,async route=>{await sleep(800);await route.continue();});
+  await page.locator('#record-list').selectOption(first.id);
+  await page.locator('#view-record').click();
+  await page.locator('#record-list').selectOption(currentRecord);
+  await page.locator('#view-record').click();
+  await page.locator('#tab-record-overview').click();
+  await wait(async()=> (await page.locator('#record-config').innerText()).includes('--steps 100000'));
+  await sleep(1000);
+  assert((await page.locator('#record-config').innerText()).includes('--steps 100000'));
+  assert.strictEqual(commands.length,0,'History and tab switching must not issue training/process commands');
+  await page.screenshot({path:path.join(folder,'tabs-history.png'),fullPage:true});
+  await page.locator('#tab-monitor').click();
+  assert.strictEqual(await page.locator('#training-chart-recent select[name=smoothing]').inputValue(),'0.6');
   await wait(async()=> !(await page.locator('#training-stop').isDisabled()));
+  await page.locator('#tab-console').click();
+  assert(!(await page.locator('#console-output').innerText()).includes('result=finished'));
+  await page.locator('#tab-monitor').click();
+  await page.screenshot({path:path.join(folder,'tabs-monitor.png'),fullPage:true});
+  // Keyboard navigation changes panels without navigating or sending commands.
+  await page.locator('#tab-monitor').focus();await page.keyboard.press('ArrowRight');
+  assert.strictEqual(await page.locator('#tab-console').getAttribute('aria-selected'),'true');
+  await page.keyboard.press('Home');
+  assert.strictEqual(await page.locator('#tab-run').getAttribute('aria-selected'),'true');
+  await page.locator('#tab-monitor').click();
   await page.reload();await sleep(3500);assert.strictEqual(app.exitCode,null);
   const second=await context.newPage();await second.goto(url);
   await page.close({runBeforeUnload:true});await sleep(3500);assert.strictEqual(app.exitCode,null);
@@ -85,7 +133,7 @@ const config = arguments => ({script,python:path.join(root,'.venv','Scripts','py
   assert.strictEqual(record.training.data.state,'stopped');
   assert(record.training.data.completed>0);
   assert.strictEqual(errors.length,0,errors.join('\n'));
-  console.log(JSON.stringify({result:'PASS',checks:['3501-point fast run final flush','app reopen persists full results and console','read-only archive during live training','EMA and raw-data preservation','reload grace','multiple tabs','last-tab process and app shutdown']}));
+  console.log(JSON.stringify({result:'PASS',checks:['3501-point fast run final flush','app reopen persists full results and console','independent read-only archive while live steps keep increasing','live chart settings retained','out-of-order record selection','no commands from History or tab switching','keyboard tab navigation','EMA and raw-data preservation','reload grace','multiple tabs','last-tab process and app shutdown']}));
 } finally {
   if(url&&app?.exitCode===null){await post('shutdown',{}).catch(()=>{});await wait(()=>app.exitCode!==null);}
   if(browser)await browser.close();
