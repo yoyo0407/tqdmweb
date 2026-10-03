@@ -64,6 +64,29 @@ class ProgressTests(unittest.TestCase):
             progress.set_postfix(loss=invalid)
         self.assertEqual(len(progress.snapshot()["loss_recent"]), 1)
 
+    def test_chart_coordinates_and_sparse_metrics_after_resume(self):
+        progress = Progress(range(2), initial=40, total=42)
+        for item in progress:
+            progress.set_postfix(loss=0.5, accuracy=0.8, note="text", enabled=True)
+            if item == 1:
+                progress.set_postfix(learning_rate=0.01, loss=float("nan"))
+        charts = progress.snapshot()["charts"]
+        self.assertEqual(set(charts), {"loss", "accuracy", "learning_rate"})
+        self.assertEqual([point[2:] for point in charts["loss"]["recent"]], [[41, 1], [42, 2]])
+        self.assertEqual(charts["accuracy"]["recent"][-1][1:], [0.8, 42, 2])
+        self.assertEqual(charts["learning_rate"]["recent"][0][1:], [0.01, 42, 3])
+        self.assertGreaterEqual(charts["loss"]["recent"][1][0], charts["loss"]["recent"][0][0])
+
+    def test_each_chart_history_is_bounded(self):
+        progress = Progress(range(2000))
+        for step in progress:
+            progress.set_postfix(loss=step, accuracy=step / 2000)
+        for history in progress.snapshot()["charts"].values():
+            self.assertEqual(len(history["recent"]), 300)
+            self.assertLessEqual(len(history["overview"]), 600)
+            self.assertEqual(history["overview"][0][2:], [1, 1])
+            self.assertEqual(history["overview"][-1][2:], [2000, 2000])
+
 
 class WebTests(unittest.TestCase):
     def make_progress(self, items):
@@ -104,7 +127,10 @@ class WebTests(unittest.TestCase):
             self.assertEqual(progress.show(), first)
             self.assertEqual(open_page.call_count, 2)
         with urlopen(first, timeout=3) as response:
-            self.assertIn(b"<canvas", response.read())
+            self.assertIn(b'<script src="/charts.js">', response.read())
+        with urlopen(first + "charts.js", timeout=3) as response:
+            self.assertEqual(response.headers.get_content_type(), "text/javascript")
+            self.assertIn(b"createChart", response.read())
         progress.close()
         progress.close()
         self.assertIsNone(progress.server)

@@ -23,6 +23,7 @@ class Qtqdm(Progress):
 
         progress = self
         page = Path(__file__).with_name("index.html").read_bytes()
+        charts_script = Path(__file__).with_name("charts.js").read_bytes()
 
         class Handler(BaseHTTPRequestHandler):
             def respond(self, content, kind, status=200):
@@ -39,6 +40,8 @@ class Qtqdm(Progress):
             def do_GET(self):
                 if self.path == "/":
                     content, kind = page, "text/html; charset=utf-8"
+                elif self.path == "/charts.js":
+                    content, kind = charts_script, "text/javascript; charset=utf-8"
                 elif self.path == "/state":
                     content = json.dumps(progress.snapshot()).encode("utf-8")
                     kind = "application/json; charset=utf-8"

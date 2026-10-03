@@ -1,11 +1,11 @@
 """Small progress tracker independent of the web page."""
 
-from collections import deque
 from math import isfinite
 from threading import Lock
 from time import monotonic
 
 from .csv_log import CsvLog
+from .chart_history import ChartHistory
 from .control import TrainingControl
 
 
@@ -33,10 +33,8 @@ class Progress:
         self.state = "waiting"
         self.error = None
         self.metrics = {}
-        self.loss_recent = deque(maxlen=300)
-        self.loss_overview = []
-        self.loss_updates = 0
-        self.overview_stride = 1
+        self._chart_history = {}
+        self._metric_updates = 0
         self._history_lock = Lock()
         self.control = TrainingControl()
         self.control.configure_steps(initial, total)
@@ -48,21 +46,20 @@ class Progress:
         if self._csv_log is not None and values:
             self._csv_log.write(elapsed, self.started, values)
         self.metrics = {**self.metrics, **{key: str(value) for key, value in values.items()}}
-        if "loss" in values:
+        self._metric_updates += 1
+        for name, value in values.items():
+            if isinstance(value, bool):
+                continue
             try:
-                loss = float(values["loss"])
-            except (TypeError, ValueError):
-                return
-            if isfinite(loss):
+                number = float(value)
+            except (TypeError, ValueError, OverflowError):
+                continue
+            if isfinite(number):
                 with self._history_lock:
-                    point = [elapsed, loss]
-                    self.loss_recent.append(point)
-                    self.loss_updates += 1
-                    if (self.loss_updates - 1) % self.overview_stride == 0:
-                        self.loss_overview.append(point)
-                    if len(self.loss_overview) >= 600:
-                        self.loss_overview = self.loss_overview[::2]
-                        self.overview_stride *= 2
+                    if name not in self._chart_history:
+                        self._chart_history[name] = ChartHistory()
+                    history = self._chart_history[name]
+                    history.append([elapsed, number, self.started, self._metric_updates])
 
     def __iter__(self):
         if self.started_at is not None:
@@ -106,10 +103,8 @@ class Progress:
             elif control["pause_requested"]:
                 state = "pause_requested"
         with self._history_lock:
-            loss_recent = list(self.loss_recent)
-            loss_overview = list(self.loss_overview)
-            if loss_recent and loss_overview[-1] is not loss_recent[-1]:
-                loss_overview.append(loss_recent[-1])
+            charts = {name: history.snapshot() for name, history in self._chart_history.items()}
+            loss = charts.get("loss", {"recent": [], "overview": []})
         now = self.finished_at if self.finished_at is not None else monotonic()
         elapsed = 0 if self.started_at is None else now - self.started_at
         rate = (self.completed - self.initial) / elapsed if elapsed > 0 else 0
@@ -128,6 +123,7 @@ class Progress:
             "control": control,
             "error": self.error,
             "metrics": self.metrics,
-            "loss_recent": loss_recent,
-            "loss_overview": loss_overview,
+            "charts": charts,
+            "loss_recent": [point[:2] for point in loss["recent"]],
+            "loss_overview": [point[:2] for point in loss["overview"]],
         }

@@ -18,13 +18,20 @@
     .hint { color: #59636e; font-size: 0.85rem; }
     .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 20px 0 10px; }
     [hidden] { display: none !important; }
-    button, input { font: inherit; padding: 8px 12px; border: 1px solid #b8c2cc; border-radius: 6px; }
+    button, input, select { font: inherit; padding: 8px 12px; border: 1px solid #b8c2cc; border-radius: 6px; }
     button { background: #f5f7fa; cursor: pointer; }
     button:disabled { opacity: 0.5; cursor: default; }
     #stop { color: #b42318; }
     #lr-input, #save-step { width: 100px; }
     #control-message { min-height: 1.2em; }
     #save-status { overflow-wrap: anywhere; }
+    .chart-settings { padding: 12px; background: #f5f7fa; border-radius: 6px; margin: 12px 0; }
+    .axis-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 8px 0; }
+    .axis-row label { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; }
+    .axis-row input { width: 92px; }
+    .axis-row select { width: 138px; }
+    .chart-error { color: #b42318; font-size: 0.85rem; margin: 8px 0 0; }
+    .chart-caption { overflow-wrap: anywhere; }
   </style>
 </head>
 <body>
@@ -63,13 +70,13 @@
     <dl id="metrics"></dl>
   </section>
   <section id="loss-section" hidden>
-    <h2>Loss · full run</h2>
-    <p class="hint">Older points are sampled to keep the chart small · horizontal axis: elapsed seconds</p>
-    <canvas id="loss-overview" width="640" height="220"></canvas>
-    <h2>Loss · recent detail</h2>
-    <p class="hint">Latest 300 updates · horizontal axis: elapsed seconds</p>
-    <canvas id="loss-recent" width="640" height="220"></canvas>
+    <h2>全程曲線</h2>
+    <div id="chart-overview"></div>
+    <h2>近期曲線</h2>
+    <div id="chart-recent"></div>
+    <p class="hint">上下限留空會自動縮放。切換 X 軸或 Y 指標會清除該軸的範圍；重新整理頁面會恢復預設。</p>
   </section>
+  <script src="/charts.js"></script>
   <script>
     const byId = id => document.getElementById(id);
     const seconds = value => value == null ? "—" : `${Math.round(value)} s`;
@@ -79,6 +86,8 @@
     let connected = false;
     let rateInitialized = false;
     let pendingCommand = null;
+    const overviewChart = createChart("chart-overview", "overview");
+    const recentChart = createChart("chart-recent", "recent");
 
     function updateControls() {
       const ended = !connected || !controlState || controlState.finished || controlState.stop_requested;
@@ -144,55 +153,6 @@
     };
     updateControls();
 
-    function drawLoss(canvasId, points) {
-      const canvas = byId(canvasId);
-      const ctx = canvas.getContext("2d");
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      if (!points.length) return;
-
-      const left = 55, right = canvas.width - 15, top = 15, bottom = canvas.height - 30;
-      const values = points.map(point => point[1]);
-      let low = Math.min(...values), high = Math.max(...values);
-      if (low === high) {
-        const padding = Math.max(Math.abs(low) * 0.05, 0.001);
-        low -= padding;
-        high += padding;
-      }
-      const spread = high - low;
-      const start = points[0][0], duration = points.at(-1)[0] - start;
-      const x = (point, index) => left + (right - left) *
-        (duration > 0 ? (point[0] - start) / duration : index / Math.max(points.length - 1, 1));
-      const y = point => bottom - (bottom - top) * (point[1] - low) / spread;
-
-      ctx.strokeStyle = "#d8dee4";
-      ctx.beginPath();
-      ctx.moveTo(left, top);
-      ctx.lineTo(left, bottom);
-      ctx.lineTo(right, bottom);
-      ctx.stroke();
-      ctx.fillStyle = "#59636e";
-      ctx.font = "12px system-ui";
-      ctx.fillText(high.toFixed(3), 5, top + 5);
-      ctx.fillText(low.toFixed(3), 5, bottom);
-      ctx.fillText(`${start.toFixed(1)}s`, left, canvas.height - 8);
-      ctx.fillText(`${points.at(-1)[0].toFixed(1)}s`, right - 35, canvas.height - 8);
-
-      ctx.strokeStyle = "#1769e0";
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      points.forEach((point, index) => {
-        if (index === 0) ctx.moveTo(x(point, index), y(point));
-        else ctx.lineTo(x(point, index), y(point));
-      });
-      ctx.stroke();
-      if (points.length === 1) {
-        ctx.beginPath();
-        ctx.arc(x(points[0], 0), y(points[0]), 3, 0, Math.PI * 2);
-        ctx.fillStyle = "#1769e0";
-        ctx.fill();
-      }
-    }
-
     async function refresh() {
       try {
         const response = await fetch("/state", {cache: "no-store"});
@@ -256,9 +216,9 @@
           metrics.append(box);
         }
         byId("metrics-section").hidden = Object.keys(data.metrics).length === 0;
-        byId("loss-section").hidden = data.loss_overview.length === 0;
-        drawLoss("loss-overview", data.loss_overview);
-        drawLoss("loss-recent", data.loss_recent);
+        byId("loss-section").hidden = Object.keys(data.charts).length === 0;
+        overviewChart.update(data.charts);
+        recentChart.update(data.charts);
         if (data.state === "failed" && !errorShown) {
           errorShown = true;
           alert(data.error || "The task failed.");
