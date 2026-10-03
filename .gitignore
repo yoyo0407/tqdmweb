@@ -9,3 +9,6 @@ runs/
 履歷*
 Resume*
 build_resume*.py
+
+# Task specs for agents (local only)
+TASK_*.md
