@@ -10,4 +10,3 @@ class TrainingConfigTests(unittest.TestCase):
             with self.subTest(override=override), self.assertRaises(ValueError):
                 validate_parameters({**DEFAULT_PARAMETERS, **override})
         self.assertEqual(validate_parameters(DEFAULT_PARAMETERS), DEFAULT_PARAMETERS)
-
