@@ -143,12 +143,13 @@ function createTrainingView({prefix = "", send, settingsContainer = null, readHi
       ? `${data.started} / unknown`
       : `${data.started} / ${data.total}`;
     byId("completed").textContent = data.completed;
-    byId("rate").textContent = data.rate ? `${data.rate.toFixed(1)} items/s` : "—";
+    byId("rate").textContent = data.rate ? `${data.rate.toFixed(1)} ${data.unit || "items"}/s` : "—";
     byId("elapsed").textContent = seconds(data.elapsed);
     byId("remaining").textContent = data.state === "paused" ? "Paused" : seconds(data.remaining);
     const bar = byId("bar");
     if (data.total == null) bar.removeAttribute("value");
     else { bar.max = Math.max(data.total, 1); bar.value = data.started; }
+    renderBars(data.bars || []);
     const metrics = byId("metrics");
     metrics.replaceChildren();
     for (const [name, value] of Object.entries(data.metrics)) {
@@ -171,6 +172,29 @@ function createTrainingView({prefix = "", send, settingsContainer = null, readHi
       alert(data.error || "The task failed.");
     }
   }
+  // Nested bars (inner loops) shown under the main bar, indented by depth.
+  function renderBars(bars) {
+    const container = byId("bars");
+    if (!container) return;
+    container.hidden = bars.length === 0;
+    container.replaceChildren(...bars.map(bar => {
+      const row = document.createElement("div");
+      row.className = "nested-bar";
+      row.style.marginLeft = `${(bar.depth - 1) * 20}px`;
+      const label = document.createElement("div");
+      label.className = "hint";
+      const count = bar.total == null ? `${bar.started}` : `${bar.started} / ${bar.total}`;
+      const rate = bar.rate ? ` · ${bar.rate.toFixed(1)} ${bar.unit}/s` : "";
+      const left = bar.remaining == null || bar.state !== "running" ? "" : ` · ${seconds(bar.remaining)} left`;
+      label.textContent = `${bar.description || "Inner loop"} · ${count}${rate}${left}` +
+        (bar.state === "running" ? "" : ` · ${bar.state}`);
+      const progress = document.createElement("progress");
+      if (bar.total != null) { progress.max = Math.max(bar.total, 1); progress.value = bar.started; }
+      row.append(label, progress);
+      return row;
+    }));
+  }
+
   function reset() {
     generation++;
     commandBusy = false;
@@ -182,6 +206,7 @@ function createTrainingView({prefix = "", send, settingsContainer = null, readHi
     historyBusy = false;
     for (const id of ["control-message", "lr-current", "save-status", "save-schedule-status"]) byId(id).textContent = "";
     byId("lr-input").value = byId("save-step").value = "";
+    if (byId("bars")) { byId("bars").replaceChildren(); byId("bars").hidden = true; }
     overviewChart?.destroy();
     recentChart?.destroy();
     overviewChart = createChart(prefix + "chart-overview", "overview", settingsContainer);

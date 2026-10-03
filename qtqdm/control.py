@@ -161,6 +161,11 @@ class TrainingControl:
                         self._save_completed_id = save_request_id
                     self._condition.notify_all()
 
+    @property
+    def stop_requested(self):
+        with self._condition:
+            return self._stop_requested
+
     def finish(self):
         with self._condition:
             self._finished = True

@@ -128,3 +128,9 @@ Script 建立 model／optimizer、Qtqdm 與 handlers，然後執行一次迴圈�
 `Progress.history_since(after, limit)` 在 history lock 內以 update index 切出最多 2,000 次 updates，回傳 `charts`、`next_update`、`has_more`。每個 metric 的 full list 不裁切；所有 metric updates 與 cursor 在同一個鎖內提交，避免 HTTP 讀取時漏掉剛新增的 point。
 
 Standalone page 從 child `/history?after=...` 讀取。Board 的 TrainingBridge 每個 polling cycle 最多取得 4 pages，append 至自己的 cache，並由 Board `/training-history?job_id=...&after=...` 提供前端增量讀取。主 `/state` 只提供 bounded previews 與 `history_updates`。Child 結束後保留 Board 已收到的資料；job_id 改變才清空。前端只追加新增 points，refresh 時從 cursor 0 重建；舊 job 的延遲 response 不加入新 job。完整歷史的 RAM 使用量隨 run 長度成長，CSV 持續保存磁碟紀錄。
+
+## tqdm compatibility and nested bars
+
+`Progress` 有兩種模式：傳入 iterable 時由 `__iter__` 計數；`items=None` 時是 manual 模式，由 `update(n)` 計數並在每次 update 後呼叫 `control.checkpoint()`。Manual bar 由 `_finalize_manual()` 在 `__exit__`／`close()` 時結束一次。
+
+`web.py` 的 `_active_bars` 記錄目前正在執行的 bars（開始執行時 `_on_start` 加入，結束時 `_deactivate` 移除）。新建立的 `Qtqdm` 若發現有正在執行的 bar，就成為它的子 bar：`root` 指向最外層、`depth` 加一，不開 server、不擷取 Console、不寫 run record。子 bar 的 `control` 換成 `_ChildControl`，它把 checkpoint 轉給最外層的 `TrainingControl`，所以 Pause／Stop／Save 會在內層邊界生效，而且子 bar 結束時不會把外層的控制標成 finished。最外層 `snapshot()` 的 `bars` 列出子 bar 的計數與速度，`training_view.js` 的 `renderBars` 畫在主進度條下方。

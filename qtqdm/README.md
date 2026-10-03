@@ -17,7 +17,39 @@ with Qtqdm(range(100), desc="Training") as progress:
         progress.set_postfix(loss=loss)
 ```
 
-`train_step` 是自己的訓練函式。也可以用 `from qtqdm import tqdm`，接著寫 `with tqdm(...) as progress:`，保留熟悉的名稱。`desc` 與 `description` 都可用，但不要同時指定。`set_postfix({"loss": loss}, accuracy=accuracy)` 支援 mapping 加 keyword arguments；`refresh` 參數僅供呼叫相容，不改變網頁輪詢。這是基本 iterable API，沒有承諾完整 tqdm 相容；manual `update()`、`trange`、nested bars 等尚未支援。
+`train_step` 是自己的訓練函式。也可以用 `from qtqdm import tqdm`，接著寫 `with tqdm(...) as progress:`，保留熟悉的名稱。`desc` 與 `description` 都可用，但不要同時指定。`set_postfix({"loss": loss}, accuracy=accuracy)` 支援 mapping 加 keyword arguments；`refresh` 參數僅供呼叫相容，不改變網頁輪詢。沒有承諾完整 tqdm 相容，但常見寫法都能直接執行，見下方「tqdm 相容寫法」。
+
+### tqdm 相容寫法
+
+手動更新：不傳 iterable，改傳 `total`，每完成一批呼叫 `update(n)`。暫停在 `update()` 內生效；按 Stop 後 `progress.stopped` 變成 True，迴圈要自己 `break`。
+
+```python
+with tqdm(total=len(dataset), unit="sample") as progress:
+    for batch in loader:
+        train_step(batch)
+        progress.update(len(batch))
+        if progress.stopped:
+            break
+```
+
+離開 `with` 或呼叫 `close()` 時結束：達到 `total`（或沒有 `total`）記為 finished，否則記為 stopped。
+
+`trange(10)` 等於 `Qtqdm(range(10))`。`set_description()`、`n`、`unit`、`leave`、`disable`、`postfix` 可用；`ncols`、`position`、`mininterval`、`bar_format` 等終端機顯示參數會被接受但忽略，其他不認得的參數會報 TypeError。`disable=True` 不開網頁、不擷取 Console，只照常迭代。
+
+巢狀進度條：外層迴圈執行中建立的 bar 會變成子 bar，顯示在外層頁面的主進度條下方，不另開 server。
+
+```python
+for epoch in trange(10, desc="Epoch"):
+    for batch in tqdm(loader, desc="Batch", leave=False):
+        loss = train_step(batch)
+        ...
+```
+
+- Pause／Stop／Save 由最外層 bar 負責，但在內層每一步邊界就會生效，不必等整個 epoch。Stop 後內層迴圈先結束，外層在下一步結束。
+- 內層呼叫 `set_postfix()` 會記到外層的 metrics 與曲線。同一個 epoch 內的點共用同一個 Step，建議把 X 軸切成 Update Index 或 Elapsed。
+- `register_controls()` 只能在最外層呼叫。
+- 新的內層 bar 開始時，會取代同一層已結束的 bar；`leave=False` 的 bar 結束時直接移除。
+- 判斷父子關係只看「目前正在執行的 bar」：已建立但還沒開始跑的 bar 不會收編之後的 bar；外層結束後再建立的 bar 會是新的獨立頁面。
 
 離開 `with` 會結束 Console capture 與這次控制；server 可保留完成或錯誤狀態。短腳本若要保留頁面直到使用者關閉，可使用下面的 `wait()` 範例。
 
