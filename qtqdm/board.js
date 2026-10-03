@@ -19,8 +19,8 @@ function updateButtons() {
   byId("stop-process").disabled = busy || !connected || !lastState?.running || lastState?.state === "stopping";
   byId("force-stop").disabled = busy || !connected || !lastState?.running;
   byId("quit").disabled = !connected;
-  for (const id of ["choose-script", "choose-python", "choose-directory", "choose-checkpoint", "inspect-checkpoint", "clear-checkpoint"]) byId(id).disabled = busy || !connected;
-  for (const id of ["arguments", "python", "working-directory"]) byId(id).disabled = busy;
+  for (const id of ["choose-script", "choose-python", "choose-directory"]) byId(id).disabled = busy || !connected;
+  for (const id of ["arguments", "patch-tqdm", "python", "working-directory"]) byId(id).disabled = busy;
 }
 
 async function request(url, options) {
@@ -42,21 +42,18 @@ function updateEnvironments(paths) {
 async function selectPath(kind) {
   busy = true; updateButtons();
   message("Select a path in the Windows dialog.");
-  const target = {script: "script", python: "python", directory: "working-directory", checkpoint: "checkpoint-path"}[kind];
+  const target = {script: "script", python: "python", directory: "working-directory"}[kind];
   try {
     const data = await request("/select-path", {method: "POST", headers: {"Content-Type": "application/json"},
       body: JSON.stringify({kind, initial: byId(target).value || byId("working-directory").value})});
     if (data.path) {
       byId(target).value = data.path;
       if (kind === "script") {
-        byId("checkpoint-path").value = "";
-        byId("checkpoint-status").textContent = "";
         byId("working-directory").value = data.working_directory;
         updateEnvironments(data.python_environments);
         if (detectedPython) byId("python").value = detectedPython;
       }
       message(`Selected ${data.path}`);
-      if (kind === "checkpoint") await inspectCheckpoint();
     } else message("Selection canceled.");
   } catch (error) { message(error.message); }
   finally { busy = false; updateButtons(); }
@@ -65,18 +62,7 @@ async function selectPath(kind) {
 function launchConfig() {
   return {script: byId("script").value, python: byId("python").value,
           working_directory: byId("working-directory").value, arguments: byId("arguments").value,
-          checkpoint_path: byId("checkpoint-path").value};
-}
-
-async function inspectCheckpoint() {
-  if (!byId("checkpoint-path").value) { byId("checkpoint-status").textContent = "Choose a checkpoint first."; return; }
-  busy = true; updateButtons();
-  byId("checkpoint-status").textContent = "Inspecting checkpoint in the selected Python environment...";
-  try {
-    const data = await request("/inspect-checkpoint", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(launchConfig())});
-    byId("checkpoint-status").textContent = `Validated: ${data.format} | Resume Step: ${data.next_step} | Target: ${data.target_steps} | Learning Rate: ${data.learning_rate}`;
-  } catch (error) { byId("checkpoint-status").textContent = `Checkpoint rejected: ${error.message}`; }
-  finally { busy = false; updateButtons(); }
+          patch_tqdm: byId("patch-tqdm").checked};
 }
 
 async function action(route, data = {}) {
@@ -92,12 +78,6 @@ async function action(route, data = {}) {
 byId("choose-script").onclick = () => selectPath("script");
 byId("choose-python").onclick = () => selectPath("python");
 byId("choose-directory").onclick = () => selectPath("directory");
-byId("choose-checkpoint").onclick = () => selectPath("checkpoint");
-byId("inspect-checkpoint").onclick = inspectCheckpoint;
-byId("clear-checkpoint").onclick = () => { byId("checkpoint-path").value = ""; byId("checkpoint-status").textContent = "Checkpoint cleared; next launch starts a new run."; };
-for (const id of ["arguments", "python", "working-directory"]) {
-  byId(id).addEventListener("input", () => { if (byId("checkpoint-path").value) byId("checkpoint-status").textContent = "Settings changed; checkpoint will be checked again before launch."; });
-}
 byId("autodetect").onclick = () => { if (detectedPython) byId("python").value = detectedPython; };
 for (const id of ["python", "working-directory"]) {
   byId(id).addEventListener("invalid", () => { showTab("tab-run"); });
@@ -157,26 +137,6 @@ for (const listId of ["main-tabs", "history-tabs"]) {
   });
 }
 
-// pagehide handles ordinary tab closure; leases cover a crashed browser.
-const viewerId = crypto.randomUUID();
-let viewerSequence = 0;
-let viewerLeaving = false;
-function viewerHeartbeat() {
-  if (viewerLeaving) return;
-  request("/viewer", {method: "POST", headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({id: viewerId, sequence: ++viewerSequence})}).catch(() => {});
-}
-function viewerClosed() {
-  if (viewerLeaving) return;
-  viewerLeaving = true;
-  navigator.sendBeacon("/viewer", new Blob([JSON.stringify({id: viewerId, closed: true, sequence: ++viewerSequence})], {type: "application/json"}));
-}
-window.addEventListener("pagehide", viewerClosed);
-window.addEventListener("beforeunload", viewerClosed);
-window.addEventListener("pageshow", () => { viewerLeaving = false; viewerHeartbeat(); });
-document.addEventListener("visibilitychange", () => { if (!document.hidden) viewerHeartbeat(); });
-viewerHeartbeat();
-setInterval(viewerHeartbeat, 1000);
 setInterval(recordView.refreshRecords, 2000);
 
 async function refresh() {
@@ -204,7 +164,7 @@ async function refresh() {
     byId("python").value = config.python;
     byId("working-directory").value = config.working_directory;
     byId("arguments").value = config.arguments;
-    // Saved Arguments already contain --resume; leave the picker empty to avoid duplication.
+    byId("patch-tqdm").checked = Boolean(config.patch_tqdm);
     updateEnvironments(data.python_environments);
   } catch (error) { message(error.message); }
   recordView.refreshRecords();

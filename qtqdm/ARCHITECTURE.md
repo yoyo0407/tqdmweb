@@ -21,9 +21,6 @@
 | `control.py` | 使用 Condition 協調網頁執行緒與訓練執行緒 |
 | `progress.py` | 計數、歷史取樣，每一步開始前檢查控制狀態 |
 | `csv_log.py` | 保存完整指標更新 |
-| `../gpu_training_demo.py` | 建立 PyTorch 模型、實際套用 learning rate、執行 GPU 訓練 |
-| `../training_checkpoint.py` | 保存／載入模型、optimizer、下一步編號與隨機數狀態 |
-| `../training_config.py` | GPU 範例的 hyperparameter 驗證，不依賴 PyTorch |
 | `../rl2048_demo.py` | 公開 2048 DQN 的 Qtqdm adapter；每個 move 回報 metrics 與處理 controls |
 | `../rl2048_checkpoint.py` | 保存／恢復 model、target、optimizer、replay、game 與 RNG |
 | `../third_party/rl2048/` | 固定版本的 MIT 上游環境、DQN、network 與 replay buffer，保留來源與修改紀錄 |
@@ -34,7 +31,7 @@
 
 `../tqdmboard.cmd` 呼叫專案 `.venv` 的 Python 執行 `../tqdmboard.py`，進入 `board.py`。App HTTP server 與 Python training subprocess 分開；App 本身只依賴標準函式庫。`board_process.py` 以 shell=False 與獨立 argument list 啟動所選 script，保留 stdin pipe，收集合併的 stdout／stderr。每個 process 建立新 log，網頁只保留 bounded console buffer。
 
-ProcessRunner 發現 `Qtqdm page: http://127.0.0.1:PORT/` 後，由 TrainingBridge 背景讀取 child `/state`。Board 的 `/state` 合併 process、resources 和 training 快取，自己的 HTML／JS 呈現 training data；沒有 iframe。Board `/training-control` 檢查 job_id，再轉送至 child `/control`。讀取 timeout 為 1 秒，快取失敗或超過 3 秒停用 controls；HTTP state 請求不等待 child 回應。新 process 清除舊快取，退出後保留最後收到的資料。`TQDMBOARD=1` 避免 Qtqdm 另開分頁，GPU 範例在此模式以 `wait()` 保留結束後的畫面。App 透過 PYTHONPATH 讓外部 scripts 找到 Qtqdm。
+ProcessRunner 發現 `Qtqdm page: http://127.0.0.1:PORT/` 後，由 TrainingBridge 背景讀取 child `/state`。Board 的 `/state` 合併 process、resources 和 training 快取，自己的 HTML／JS 呈現 training data；沒有 iframe。Board `/training-control` 檢查 job_id，再轉送至 child `/control`。讀取 timeout 為 1 秒，快取失敗或超過 3 秒停用 controls；HTTP state 請求不等待 child 回應。新 process 清除舊快取，退出後保留最後收到的資料。`TQDMBOARD=1` 避免 Qtqdm 另開分頁，2048 範例在此模式以 `wait()` 保留結束後的畫面。App 透過 PYTHONPATH 讓外部 scripts 找到 Qtqdm。
 
 NativePicker 用 Windows PowerShell 的 STA process 開啟系統 OpenFileDialog／FolderBrowserDialog。選取設定透過 stdin JSON 傳遞；回傳完整路徑，Cancel 回傳 null。App 不再提供 folder listing 或網頁 directory tree。只允許一個選擇視窗，App close 時結束自己的 dialog process。
 
@@ -48,9 +45,9 @@ Python 主執行緒負責訓練，背景 `ThreadingHTTPServer` 負責網頁請�
 
 資料顯示：訓練呼叫 `set_postfix()` → 更新狀態與 CSV → 網頁讀取 `GET /state`。
 
-`/state` 的 `charts` 依指標名稱提供 `recent` 與 `overview`。每個點是 `[經過秒數, 數值, 項目步數, set_postfix 更新編號]`，步數以當前已開始處理的項目計算，接續工作會保留原步數。文字、布林值及非有限數值不加入曲線，但仍保留在最新指標與 CSV。Loss 使用 `charts.loss`，與其他指標共用格式。
+`/state` 的 `charts` 依指標名稱提供 `overview`。每個點是 `[經過秒數, 數值, 項目步數, set_postfix 更新編號]`，步數以當前已開始處理的項目計算，接續工作會保留原步數。文字、布林值及非有限數值不加入曲線，但仍保留在最新指標與 CSV。Loss 使用 `charts.loss`，與其他指標共用格式。
 
-Canvas 以實際 CSS 尺寸與 devicePixelRatio 設定 bitmap，ResizeObserver 在展開 Advanced 或改變視窗尺寸時重繪；destroy 在新 run reset 時釋放 observer。刻度精度依 tick spacing 計算，大步數不再使用 4 位有效數字裁切。Step／Update Index 使用整數刻度，Elapsed Time 保留小數。Caption 顯示座標範圍與實際 samples 區間；Full Metric History 保留所有數值 points，X Min=0 能顯示該 run 早期的資料。`charts.recent` 仍提供 300-point API preview，前端完整曲線改讀 `/history`。
+Canvas 以實際 CSS 尺寸與 devicePixelRatio 設定 bitmap，ResizeObserver 在展開 Advanced 或改變視窗尺寸時重繪；destroy 在新 run reset 時釋放 observer。刻度精度依 tick spacing 計算，大步數不再使用 4 位有效數字裁切。Step／Update Index 使用整數刻度，Elapsed Time 保留小數。Caption 顯示座標範圍與實際 samples 區間；Full Metric History 保留所有數值 points，X Min=0 能顯示該 run 早期的資料。前端完整曲線讀 `/history`；`charts.overview` 為最多約 600 點的縮略資料。
 
 兩張圖各自持有 X 軸種類、Y 指標與範圍，預設使用步數／loss（沒有 loss 時選第一個數值指標）。設定只存在目前頁面，重新整理會恢復預設；圖表設定不送到訓練控制端。切換軸種類會清除該軸範圍，另一軸保持不變。指定範圍時裁切繪圖，不刪除歷史資料；Y 軸自動範圍依 X 範圍內的取樣點計算，沒有點時使用整段資料。
 
@@ -76,11 +73,13 @@ Canvas 以實際 CSS 尺寸與 devicePixelRatio 設定 bitmap，ResizeObserver �
 
 ## Registered controls
 
+事件標註資料流為 `TrainingControl.on_event` → `Progress._record_event` → `/state.events` → `charts.js` 畫事件虛線；每筆格式為 `[elapsed, kind, step, update_index, label]`，X 軸沿用曲線的 index 0／2／3。控制事件在實際暫停、恢復、停止、調整 LR 成功或保存結果產生時記錄，手動 `mark()` 與子 bar 的標註也存到最外層。`snapshot()` 在 history lock 內複製 events，Board 的 SQLite training snapshot 保留它，History 回看使用同一份資料。`on_event` 在持有 Condition 鎖時呼叫（`_emit`）；它只會再拿 history lock，而程式中沒有任何地方持有 history lock 時去拿控制鎖，鎖順序固定為「控制鎖 → history lock」，不會互相等待。之後若在 history lock 內呼叫 control，要先改掉這個設計。
+
 `Progress.register_controls` 是公開入口，轉交 `TrainingControl.register_controls`。Script 提供 `save_checkpoint()` 與 `set_learning_rate(value)`，後者同時提供初始 learning rate；函式不直接依賴 PyTorch。Qtqdm 在下一個 step boundary 自動呼叫已註冊 handler，將結果寫回 control state。控制僅保留 handler 接入方式。
 
 `checkpoint()` 在 Condition 鎖內取得待處理指令，釋放鎖後執行 callback，再取得鎖回報結果。已暫停时也會被指令喚醒，處理後繼續等待；同一 boundary 先套用 learning rate，再執行保存。Stop 優先取消尚未套用的 learning rate；已排入的保存仍可完成。Callback 發生 Exception 時回報 `learning_rate_error`／`save_error`，不讓一般控制失敗中斷 training；不保證回滾 handler 內部的部分修改。
 
-`/state.control.capabilities` 宣告 pause、stop、save_checkpoint、learning_rate 的支援情況。網頁顯示支援摘要與 handler 錯誤，並依 run state 停用按鈕。GPU 範例每次 process 執行建立自己的 model、optimizer 與 callbacks。
+`/state.control.capabilities` 宣告 pause、stop、save_checkpoint、learning_rate 的支援情況。網頁顯示支援摘要與 handler 錯誤，並依 run state 停用按鈕。2048 範例每次 process 執行建立自己的 model、optimizer 與 callbacks。
 
 ## Resource monitoring
 
@@ -94,7 +93,7 @@ Condition 讓暫停的訓練等待通知，不需要持續輪詢。`resume`、`s
 
 Script 建立 model／optimizer、Qtqdm 與 handlers，然後執行一次迴圈。Qtqdm 拒絕重用同一個 iterator。完成、停止或例外後清除未完成控制，保留讀取用狀態；`wait()` 可保留 page，`close()` 結束 server。
 
-GPU 範例正常完成或受控停止後保存 checkpoint，失敗保留 traceback 與已寫入紀錄。再次執行由 App 啟動新 process；CLI 的 `--resume` 在該次執行恢復 checkpoint。沒有相同 process 的重新建模或 Restart schema。
+2048 範例正常完成或受控停止後保存 checkpoint，失敗保留 traceback 與已寫入紀錄。再次執行由 App 啟動新 process；CLI 的 `--resume` 在該次執行恢復 checkpoint。沒有相同 process 的重新建模或 Restart schema。
 
 ## Console Output
 
@@ -110,26 +109,34 @@ GPU 範例正常完成或受控停止後保存 checkpoint，失敗保留 traceba
 
 訓練程式透過 `progress.register_controls(save_checkpoint=save_function)` 提供保存函式，函式回傳保存路徑。網頁只送出要求；`control.py` 在訓練執行緒的步驟邊界呼叫函式，確保保存時沒有同時更新模型。寫檔時不持有控制鎖，網頁仍能讀取狀態。保存失敗會顯示原因並允許重試，訓練可繼續。
 
-GPU 範例每次手動／預訂保存都建立新檔案，頁面顯示最近成功的路徑。同時只保留一個未來預訂，達到指定已完成步數時觸發一次，包含最後一步。取消只影響尚未觸發的預訂；提前結束會清除剩餘預訂。暫停中的手動保存不會讓訓練繼續。
+2048 範例每次手動／預訂保存都建立新檔案，頁面顯示最近成功的路徑。同時只保留一個未來預訂，達到指定已完成步數時觸發一次，包含最後一步。取消只影響尚未觸發的預訂；提前結束會清除剩餘預訂。暫停中的手動保存不會讓訓練繼續。
 
-GPU 範例在正常完成或透過網頁提前停止後，由訓練端寫出 `.pt` 保存檔。內容包括模型權重、optimizer 設定及內部狀態、下一步編號、原目標步數，以及 CPU／目前 CUDA 裝置的隨機數狀態。先寫臨時檔再替換正式檔，避免把未寫完的內容當成成功保存。
+2048 範例在正常完成或透過網頁提前停止後，由訓練端寫出 `.pt` 保存檔。內容包括模型權重、optimizer 設定及內部狀態、下一步編號、原目標步數，以及 CPU／目前 CUDA 裝置的隨機數狀態。先寫臨時檔再替換正式檔，避免把未寫完的內容當成成功保存。
 
 載入時，範例先重建相同的模型、optimizer 與固定種子的示範資料，再恢復保存內容。新的 `Qtqdm` 物件用 `initial` 顯示原本已完成的步數；新 CSV 從後續項目編號開始，曲線只呈現本次接續執行的資料，原 CSV 與保存檔保留。
 
-`control.py` 的 `checkpoint()` 是控制指令檢查點；`training_checkpoint.py` 的保存檔是持久化訓練狀態。兩者責任不同。
+`control.py` 的 `checkpoint()` 是控制指令檢查點；`rl2048_checkpoint.py` 的保存檔是持久化訓練狀態。兩者責任不同。
 
 ## 其他檔案
 
 - `../example.py`：不依賴 PyTorch 的進度與曲線範例。
 - `../tests/`：進度／CSV、控制／HTTP、保存／恢復測試。
-- `../checkpoint_smoke.py`：GPU 上驗證含 Dropout、BatchNorm 與 AdamW 的模型能精確接續。
 - `../runs/`：每次訓練產生的 CSV 與 `.pt`，不放進 Git。
 - `../.venv/`：獨立 Python 與 GPU 套件環境。
-- `../requirements-gpu.txt`：可重建的 GPU 套件版本。
-- `../GPU_SETUP.md`：RTX 5060 的執行指令。
+- `../requirements-gpu.txt`：可重建的 PyTorch CUDA 套件版本（2048 demo 使用）。
 
 ## Complete history transport
 
 `Progress.history_since(after, limit)` 在 history lock 內以 update index 切出最多 2,000 次 updates，回傳 `charts`、`next_update`、`has_more`。每個 metric 的 full list 不裁切；所有 metric updates 與 cursor 在同一個鎖內提交，避免 HTTP 讀取時漏掉剛新增的 point。
 
 Standalone page 從 child `/history?after=...` 讀取。Board 的 TrainingBridge 每個 polling cycle 最多取得 4 pages，append 至自己的 cache，並由 Board `/training-history?job_id=...&after=...` 提供前端增量讀取。主 `/state` 只提供 bounded previews 與 `history_updates`。Child 結束後保留 Board 已收到的資料；job_id 改變才清空。前端只追加新增 points，refresh 時從 cursor 0 重建；舊 job 的延遲 response 不加入新 job。完整歷史的 RAM 使用量隨 run 長度成長，CSV 持續保存磁碟紀錄。
+
+## tqdm compatibility and nested bars
+
+`Progress` 有兩種模式：傳入 iterable 時由 `__iter__` 計數；`items=None` 時是 manual 模式，由 `update(n)` 計數並在每次 update 後呼叫 `control.checkpoint()`。Manual bar 由 `_finalize_manual()` 在 `__exit__`／`close()` 時結束一次。
+
+`web.py` 的 `_active_bars` 記錄目前正在執行的 bars（開始執行時 `_on_start` 加入，結束時 `_deactivate` 移除）。新建立的 `Qtqdm` 若發現有正在執行的 bar，就成為它的子 bar：`root` 指向最外層、`depth` 加一，不開 server、不擷取 Console、不寫 run record。子 bar 的 `control` 換成 `_ChildControl`，它把 checkpoint 轉給最外層的 `TrainingControl`，所以 Pause／Stop／Save 會在內層邊界生效，而且子 bar 結束時不會把外層的控制標成 finished。最外層 `snapshot()` 的 `bars` 列出子 bar 的計數與速度，`training_view.js` 的 `renderBars` 畫在主進度條下方。
+
+## Zero-code tqdm patch
+
+`patch.py` 的 `install()` 在 script 匯入 tqdm 前，把 `tqdm`、`tqdm.auto`、`tqdm.autonotebook` 的 `tqdm`／`trange` 換成 `PatchedTqdm`（Qtqdm 子類，容忍 tqdm 的位置參數、未知 keyword 與純顯示方法）；未安裝 tqdm 時註冊簡易 stand-in modules。`__main__.py` 做完替換後以 `runpy.run_path` 執行 script。tqdmboard 勾選 `patch_tqdm` 時，`board_process.launch_command` 改用 `python -u -m qtqdm SCRIPT ARGS`，設定隨 run record 的 config JSON 保存。已知限制：第三方套件內的進度條也會成為 Qtqdm 進度條。

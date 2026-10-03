@@ -31,9 +31,6 @@ try {
         if ($request.kind -eq 'script') {
             $dialog.Title = 'Select Python Script'
             $dialog.Filter = 'Python Script (*.py)|*.py'
-        } elseif ($request.kind -eq 'checkpoint') {
-            $dialog.Title = 'Select Checkpoint'
-            $dialog.Filter = 'Checkpoint (*.pt;*.pth;*.ckpt)|*.pt;*.pth;*.ckpt|All Files (*.*)|*.*'
         } else {
             $dialog.Title = 'Select Python Executable'
             $dialog.Filter = 'Executable (*.exe)|*.exe'
@@ -57,7 +54,7 @@ class NativePicker:
         self._closed = False
 
     def pick(self, kind, initial=None):
-        if kind not in ("script", "python", "directory", "checkpoint"):
+        if kind not in ("script", "python", "directory"):
             raise ValueError("Unknown selection kind")
         if os.name != "nt":
             raise OSError("Native selection currently supports Windows")
@@ -86,7 +83,7 @@ class NativePicker:
             if kind == "directory" and not path.is_dir():
                 raise ValueError("Choose a directory")
             if kind != "directory" and (not path.is_file() or
-                (kind != 'checkpoint' and path.suffix.lower() != (".py" if kind == "script" else ".exe"))):
+                                        path.suffix.lower() != (".py" if kind == "script" else ".exe")):
                 raise ValueError("Selected file has the wrong type")
             return str(path)
         finally:

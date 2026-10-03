@@ -57,5 +57,8 @@ def validate_launch(data):
     arguments = data.get("arguments", "")
     if not isinstance(arguments, str):
         raise ValueError("Arguments must be command-line text")
+    patch_tqdm = data.get("patch_tqdm", False)
+    if not isinstance(patch_tqdm, bool):
+        raise ValueError("patch_tqdm must be true or false")
     return {**{name: str(value) for name, value in paths.items()},
-            "arguments": arguments, "argv": split_arguments(arguments)}
+            "arguments": arguments, "argv": split_arguments(arguments), "patch_tqdm": patch_tqdm}

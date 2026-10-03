@@ -18,6 +18,7 @@
       #console-output, #record-console-output { max-height: 280px; min-height: 100px; overflow: auto; border: 1px solid #b8c2cc; padding: 12px; font: 13px/1.5 monospace; white-space: pre; }
       #message, #process-status { min-height: 1.2em; overflow-wrap: anywhere; }
       progress { width: 100%; height: 24px; }
+      .nested-bar progress { height: 12px; }
       dl { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; }
       dt { color: #59636e; }
       dd { margin: 0 0 12px; font-variant-numeric: tabular-nums; }
@@ -61,13 +62,8 @@
         <label>Python Script<input id="script" type="text" readonly required></label>
         <button id="choose-script" type="button">Choose Script...</button>
         <label>Arguments<input id="arguments" type="text" placeholder="--steps 20000 --learning-rate 0.0001"></label>
-        <label>Checkpoint (optional)<input id="checkpoint-path" type="text" readonly placeholder="Start a new run without a checkpoint"></label>
-        <div class="controls">
-          <button id="choose-checkpoint" type="button">Choose Checkpoint...</button>
-          <button id="inspect-checkpoint" type="button">Inspect Checkpoint</button>
-          <button id="clear-checkpoint" type="button">Clear Checkpoint</button>
-        </div>
-        <p id="checkpoint-status" class="hint" role="status"></p>
+        <label><input id="patch-tqdm" type="checkbox"> Patch tqdm (no code changes)</label>
+        <p class="hint">Runs the script with <code>python -m qtqdm</code> so <code>from tqdm import tqdm</code> shows in the dashboard.</p>
         <h2>Launch Settings</h2>
         <label>Python Executable<input id="python" type="text" list="environments" required form="launch-form"></label>
         <datalist id="environments"></datalist>
@@ -102,6 +98,7 @@
         <h1 id="training-description">Progress</h1>
         <div id="training-state">Waiting...</div>
         <progress id="training-bar"></progress>
+        <div id="training-bars" hidden></div>
         <div class="controls">
           <button id="training-pause" type="button">Pause</button>
           <button id="training-stop" type="button">Stop</button>

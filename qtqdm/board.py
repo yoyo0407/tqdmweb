@@ -16,9 +16,6 @@ from .board_process import ProcessRunner
 from .board_monitor import ResourceMonitor
 from .board_training import TrainingBridge
 from .board_records import RunRecords
-from .board_viewers import BoardViewers
-from .board_files import validate_launch
-from .board_checkpoints import inspect_checkpoint
 from .board_errors import failure_info
 
 
@@ -28,7 +25,6 @@ class TqdmBoard:
         self.directory = Path(directory or self.project_root).resolve(strict=True)
         self.records = RunRecords(records_path or self.project_root / "runs" / "tqdmboard" / "records.sqlite3")
         self.records.recover()
-        self.viewers = BoardViewers()
         self.runner = ProcessRunner(self.project_root, self.records)
         self.monitor = ResourceMonitor()
         self.training = TrainingBridge(self.runner, self.records)
@@ -131,9 +127,7 @@ class TqdmBoard:
                     data = json.loads(self.rfile.read(length))
                     if not isinstance(data, dict):
                         raise ValueError("Expected a JSON object")
-                    if self.path == "/viewer":
-                        board.viewers.update(data.get("id"), data.get("closed") is True, data.get("sequence"))
-                    elif self.path == "/select-path":
+                    if self.path == "/select-path":
                         path = board.picker.pick(data.get("kind"), data.get("initial"))
                         result = {"path": path}
                         if path and data["kind"] == "script":
@@ -144,10 +138,6 @@ class TqdmBoard:
                     elif self.path == "/training-control":
                         result, status = board.training.control(data)
                         self.respond_json(result, status)
-                        return
-                    elif self.path == '/inspect-checkpoint':
-                        config = validate_launch(data)
-                        self.respond_json(inspect_checkpoint(config, data.get('checkpoint_path', '')))
                         return
                     elif self.path == '/record-rename':
                         board.records.rename(data.get('id'), data.get('name'))
@@ -178,14 +168,8 @@ class TqdmBoard:
         self.monitor.start()
         self.training.start()
         Thread(target=self.server.serve_forever, daemon=True).start()
-        Thread(target=self._watch_viewers, daemon=True).start()
         print(f"tqdmboard: {self.url}", flush=True)
         return self.url
-
-    def _watch_viewers(self):
-        while not self.closed.wait(0.25):
-            if self.viewers.should_close():
-                self.closed.set()
 
     def close(self):
         self.closed.set()

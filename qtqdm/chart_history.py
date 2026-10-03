@@ -1,6 +1,5 @@
-"""Complete metric history, bounded previews and incremental transport."""
+"""Complete metric history, bounded overview and incremental transport."""
 
-from collections import deque
 from bisect import bisect_right
 
 
@@ -22,7 +21,6 @@ def history_page(series, after, last_update, limit=2000):
 
 class ChartHistory:
     def __init__(self):
-        self.recent = deque(maxlen=300)
         self.full = []
         self.overview = []
         self.updates = 0
@@ -30,7 +28,6 @@ class ChartHistory:
 
     def append(self, point):
         # Point: [elapsed seconds, metric value, item number, update number].
-        self.recent.append(point)
         self.full.append(point)
         self.updates += 1
         if (self.updates - 1) % self.stride == 0:
@@ -41,6 +38,6 @@ class ChartHistory:
 
     def snapshot(self):
         overview = list(self.overview)
-        if self.recent and overview[-1] is not self.recent[-1]:
-            overview.append(self.recent[-1])
-        return {"recent": list(self.recent), "overview": overview}
+        if self.full and overview[-1] is not self.full[-1]:
+            overview.append(self.full[-1])
+        return {"overview": overview}

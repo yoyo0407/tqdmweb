@@ -103,7 +103,6 @@ const config = arguments => ({script,python:path.join(root,'.venv','Scripts','py
   await page.locator('#view-record').click();
   await wait(async()=> (await page.locator('#record-chart-full .chart-caption').innerText()).includes('(3501 points)'));
   await wait(async()=> Number(await page.locator('#training-completed').innerText())>=startStep+50);
-  await sleep(3500);assert.strictEqual(app.exitCode,null,'History must not trigger last-tab shutdown');
   const during = await (await fetch(url+'state')).json();
   assert.strictEqual(during.job_id,currentJob);
   assert.strictEqual(during.running,true);
@@ -187,7 +186,7 @@ const config = arguments => ({script,python:path.join(root,'.venv','Scripts','py
   await page.locator('#run-error details > summary').click();
   assert((await page.locator('#run-error [data-error-traceback]').innerText()).includes('RuntimeError'));
   assert((await page.locator('#run-error [data-error-log]').innerText()).includes('.log'));
-  // Start a fresh execution for the last-tab shutdown regression.
+  // Start a fresh execution for the Quit App regression.
   await post('run',config('--steps 100000 --delay 0.005'));
   await wait(async()=> (await (await fetch(url+'state')).json()).training.connected);
   // Keyboard navigation changes panels without navigating or sending commands.
@@ -196,20 +195,18 @@ const config = arguments => ({script,python:path.join(root,'.venv','Scripts','py
   await page.keyboard.press('Home');
   assert.strictEqual(await page.locator('#tab-run').getAttribute('aria-selected'),'true');
   await page.locator('#tab-monitor').click();
-  await page.reload();await sleep(3500);assert.strictEqual(app.exitCode,null);
-  const second=await context.newPage();await second.goto(url);
-  await page.close({runBeforeUnload:true});await sleep(3500);assert.strictEqual(app.exitCode,null);
-  await second.close({runBeforeUnload:true});await wait(()=>app.exitCode!==null);
+  await page.reload();
+  await post('shutdown',{});await wait(()=>app.exitCode!==null);
   assert.strictEqual(app.exitCode,0,output);
   await start();
   const recent=(await (await fetch(url+'records')).json())[0];
-  assert(recent.ended!==null,'Last-tab shutdown must stop and finalize the training process');
+  assert(recent.ended!==null,'Quit App must stop and finalize the training process');
   assert.strictEqual(recent.exit_code,0);
   record=await (await fetch(url+'record?id='+recent.id)).json();
   assert.strictEqual(record.training.data.state,'stopped');
   assert(record.training.data.completed>0);
   assert.strictEqual(errors.length,0,errors.join('\n'));
-  console.log(JSON.stringify({result:'PASS',checks:['3501-point fast run final flush','app reopen persists full results and console','independent read-only archive while live steps keep increasing','live chart settings retained','out-of-order record selection','no commands from History or tab switching','manual refresh updates displayed results and preserves axes/EMA','running record automatically shows terminal state and exit 0','Force Stop shows actual failure code and labels last captured state','keyboard tab navigation','EMA and raw-data preservation','rename and search','ZIP export','delete preserves logs and blocks active runs','central error summary','reload grace','multiple tabs','last-tab process and app shutdown']}));
+  console.log(JSON.stringify({result:'PASS',checks:['3501-point fast run final flush','app reopen persists full results and console','independent read-only archive while live steps keep increasing','live chart settings retained','out-of-order record selection','no commands from History or tab switching','manual refresh updates displayed results and preserves axes/EMA','running record automatically shows terminal state and exit 0','Force Stop shows actual failure code and labels last captured state','keyboard tab navigation','EMA and raw-data preservation','rename and search','ZIP export','delete preserves logs and blocks active runs','central error summary','Quit App stops process and app']}));
 } finally {
   if(url&&app?.exitCode===null){await post('shutdown',{}).catch(()=>{});await wait(()=>app.exitCode!==null);}
   if(browser)await browser.close();

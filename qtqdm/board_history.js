@@ -87,7 +87,8 @@ function createRecordView(request) {
       document.getElementById("delete-record").disabled = !record.ended && ["running", "detached"].includes(record.state);
       renderRunError("record-error", record.failure);
       displayedVersion = recordVersion(record);
-      byId("config").textContent = `Python: ${record.config.python}\nScript: ${record.config.script}\nArguments: ${record.config.arguments}\nWorking Directory: ${record.config.working_directory}`;
+      byId("config").textContent = `Python: ${record.config.python}\nScript: ${record.config.script}\nArguments: ${record.config.arguments}\nWorking Directory: ${record.config.working_directory}` +
+        (record.config.patch_tqdm ? "\nLaunched with: python -m qtqdm (Patch tqdm)" : "");
       const exitCode = record.exit_code ?? (record.state === "running" ? "Pending (process running)" :
         record.state === "detached" ? "Pending (process detached)" : "Unknown (exit not recorded)");
       renderValues(byId("summary"), {"Process State": record.state, "Exit Code": exitCode,
@@ -98,7 +99,7 @@ function createRecordView(request) {
         "Checkpoint": data?.control?.last_checkpoint});
       renderValues(byId("metrics"), data?.metrics || {});
       consoleView.update(record.console);
-      overviewChart.update(data?.charts || {});
+      overviewChart.update(data?.charts || {}, data?.events || []);
       byId("content").hidden = false;
       byId("status").textContent = "Recorded Run · Read-only. Current training continues in Monitor.";
       byId("chart-status").textContent = data ? "Loading saved metric history..." : "This run has no recorded Qtqdm metrics.";
@@ -112,9 +113,9 @@ function createRecordView(request) {
           histories[name].full.push(...points);
         }
         historyCursor = page.next_update;
-        fullChart.update(histories);
+        fullChart.update(histories, data?.events || []);
       }
-      fullChart.update(histories);
+      fullChart.update(histories, data?.events || []);
       if (data) byId("chart-status").textContent = "Saved raw metrics; chart settings only affect this record view.";
     } catch (error) {
       if (current === generation) byId("status").textContent = `Record loading failed: ${error.message}. Select View Record to retry.`;
