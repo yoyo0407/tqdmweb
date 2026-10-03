@@ -60,7 +60,9 @@ finally:
 - `charts.js`：獨立管理兩張圖的座標軸設定與繪圖。
 - `console.py`／`console.js`：鏡像 Python stdout／stderr 與顯示 Console Output。
 - `control.py`：接收暫停、繼續、停止、learning rate 與保存要求，在迴圈邊界協調執行。
-- `web.py`：在 `127.0.0.1` 啟動本機 HTTP 伺服器，提供頁面與 `/state` JSON。
+- `web.py`：Qtqdm 入口，接合 progress、console 與 dashboard。
+- `dashboard.py`：在 `127.0.0.1` 啟動 HTTP server，提供頁面與 `/state` JSON。
+- `session.py`／`restart.js`：維持同一個 URL，協調 Restart 與 hyperparameter 表單。
 - `index.html`：每 250 毫秒讀取 `/state` 並更新畫面。
 
 `with` 可以偵測迴圈內的例外，把狀態改為失敗，並讓頁面彈出錯誤提醒。例外仍會傳回原程式；`finally` 裡的 `wait()` 讓短腳本在失敗時也保留頁面，直到使用者按 Enter。
@@ -131,6 +133,16 @@ finally:
 Console Output 是 plain text viewer，捕捉 `with` 期間的 Python text stream；不包含外部程式或 native code 直接寫入終端機的內容，也不提供 CMD 指令執行。常見 ANSI 顏色控制碼會移除，carriage return 轉成換行。既有 logging handler 若已綁定舊 stream，不會自動改綁；可在 `with` 內建立 handler，或直接呼叫 `progress.console.write(text)`。
 
 同一個 process 僅允許一個啟用 capture 的 monitor。若有其他 monitor，請設 `capture_console=False`。顯示更新以 3 秒內為同步標準，正常連線時仍每 250 ms 輪詢；網頁關閉或斷線不會阻止訓練。
+
+## Restart Hyperparameters
+
+GPU 範例使用 `TrainingSession`，可在 Running／Paused／Completed／Stopped／Failed 後按 `Restart`。先填寫 `learning_rate`、`momentum`、`weight_decay`、`target_steps`，再按 Restart；表單不會立即更改正在執行的 optimizer。
+
+Restart 在目前 step 完成後結束舊 run，正常或受控停止的 run 會先保存 checkpoint。新 run 重建模型與 optimizer，步數／指標曲線／console buffer 重新開始，取消舊的 checkpoint schedule，使用新的 CSV／log／checkpoint；原檔案保留，網頁 URL 不變。Failed run 仍可 Restart，先前未保存的權重不會自動恢復。
+
+`--keep-open` 讓 Completed／Stopped／Failed 後仍能在同一頁 Restart，Enter 關閉 session。未指定時，工作結束且沒有待執行 Restart 就退出。
+
+一般 `Qtqdm` 仍包裝一次迴圈，不會替使用者重建模型。其他訓練程式可匯入 `from qtqdm import TrainingSession`，傳入自己的 parameters、validate callback，並透過 `session.run(train_callback)` 執行；每個 callback 使用 `session.new_progress(...)` 建立新的 Qtqdm，模型與 optimizer 由 callback 重建。完整整合範例見 `gpu_training_demo.py`。
 
 ## 測試
 

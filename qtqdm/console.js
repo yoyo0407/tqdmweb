@@ -17,6 +17,10 @@ function createConsoleView() {
   };
 
   return {
+    reset() {
+      version = -1;
+      document.getElementById("console-copy-status").textContent = "";
+    },
     update(data) {
       if (version === data.version) return;
       const top = output.scrollTop, left = output.scrollLeft;

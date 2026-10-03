@@ -7,12 +7,16 @@
 | `chart_history.py` | 每個數值指標的近期資料與總覽取樣 |
 | `console.py` | 鏡像 Python stdout／stderr、保存完整 log、限制網頁輸出長度 |
 | `console.js` | 更新 Console Output、Follow Tail 與 Copy Output |
-| `web.py` | 提供本機 HTTP 介面，驗證指令並交給控制層 |
+| `web.py` | Qtqdm 入口，接合 progress、console capture 與 dashboard |
+| `dashboard.py` | 本機 HTTP server，驗證請求後呼叫 state／control callback |
+| `session.py` | 跨 run 的 lifecycle，排程 Restart 並維持同一個 URL |
+| `restart.js` | Restart Hyperparameters 表單與狀態 |
 | `control.py` | 使用 Condition 協調網頁執行緒與訓練執行緒 |
 | `progress.py` | 計數、歷史取樣，每一步開始前檢查控制狀態 |
 | `csv_log.py` | 保存完整指標更新 |
 | `../gpu_training_demo.py` | 建立 PyTorch 模型、實際套用 learning rate、執行 GPU 訓練 |
 | `../training_checkpoint.py` | 保存／載入模型、optimizer、下一步編號與隨機數狀態 |
+| `../training_config.py` | GPU 範例的 hyperparameter 驗證，不依賴 PyTorch |
 
 `qtqdm/__init__.py` 是公開匯入入口，讓使用者寫 `from qtqdm import Qtqdm`。`Qtqdm` 繼承 `Progress`，再加上 HTTP 伺服器；`Progress` 分別持有控制模組和 CSV 紀錄器。監看套件本身不需要 PyTorch。
 
@@ -43,10 +47,23 @@ Python 主執行緒負責訓練，背景 `ThreadingHTTPServer` 負責網頁請�
 | `save` | 不需要 | 在下一個步驟邊界保存，暫停時也能保存 |
 | `schedule_save` | 尚未完成且不超過總目標的整數步數 | 完成指定步數後保存一次；新預訂取代舊預訂 |
 | `cancel_save` | 不需要 | 取消尚未觸發的預訂 |
+| `restart` | hyperparameter JSON object | 由 TrainingSession 接收，結束舊 run 後執行新 run |
 
 網頁執行緒只改控制狀態；optimizer 始終由訓練程式操作。HTTP 接受指令不代表訓練已經執行，因此 `/state` 分別提供暫停要求、已暫停、等待套用的 learning rate 與已生效值。
 
 Condition 讓暫停的訓練等待通知，不需要持續輪詢。`resume`、`stop` 或工作結束都會通知等待者。結束後拒絕新的控制指令；停止後不能接續同一個迭代器。
+
+## Restart lifecycle
+
+`TrainingSession` 持有共用 Dashboard 與目前的 Qtqdm。Restart 先驗證 hyperparameters，再記錄一個 pending request 並要求目前 run 停止；已在排程或初始化時拒絕重複 Restart。訓練 callback 返回後，session 在同一個訓練執行緒呼叫 callback 建立新模型、optimizer 與 Qtqdm，不重用舊 iterator。
+
+GPU callback 在正常完成或受控停止時寫 checkpoint，Restart 因此先保留舊 run 的 checkpoint／CSV／log。Failed run 保留已寫入檔案與 traceback，但不保證有新的 checkpoint。新 run 使用新檔名並從 step 0 開始；舊 checkpoint 不會自動載入。CLI 的 `--resume` 只用在第一個 run attempt。
+
+`/state` 的 `run_id` 在新 Qtqdm 發布時增加，`restart` 包含 enabled／pending／parameters。前端在 run_id 改變後更新表單初值、重設 console version、error alert 與 LR input。新 Qtqdm 的步數、指標歷史、pause／stop／save 狀態都是獨立資料；dashboard URL 不變。
+
+GPU 範例目前提供四個 Restart Hyperparameters：learning_rate > 0、momentum ∈ [0, 1)、weight_decay ≥ 0、target_steps 為正整數。驗證在伺服器端執行。即時 learning rate 控制仍只修改目前 optimizer；Restart 表單的值僅在下一個 run 生效。每個 run 的模型由固定 seed 42 重建，方便比較不同參數。
+
+`--keep-open` 讓 session 在 Completed／Stopped／Failed 後等待下一個 Restart；Enter 會通知 session 停止並關閉 dashboard。沒有指定時，最後一個 run 返回且沒有待執行 Restart 就退出。
 
 ## Console Output
 

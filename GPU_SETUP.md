@@ -18,6 +18,16 @@
 
 `Console Output` 同時顯示終端機中的 Python stdout／stderr。範例每 25 步輸出 loss 與 learning rate，也輸出 checkpoint 路徑和最終摘要。`Follow Tail` 自動跟隨最新輸出，取消勾選可閱讀先前內容；`Copy Output` 複製目前 buffer。網頁保留最近 65,536 個字元，完整輸出另存為 `runs` 中與 CSV 同名前綴的 `.log` 檔案。
 
+### Restart
+
+`Restart Hyperparameters` 可調整 learning_rate、momentum、weight_decay、target_steps，按 `Restart` 後套用到新的 run。模型與 optimizer 重新初始化，從 step 0 開始；舊 run 在 step boundary 結束，正常／受控停止時先保存 checkpoint，舊 CSV／log／checkpoint 都保留。網頁 URL 不變，曲線與 console 切換到新 run。Completed／Stopped／Failed 後也能 Restart，只要用 `--keep-open` 保持 session 開啟。
+
+即時 `Learning rate` 的 `Apply` 修改目前 run；Restart 表單修改下一個 run。Restart 不會自動接續 checkpoint，`--resume` 僅用於第一個 run。各 run 使用固定 seed 42 與相同示範資料，可比較 hyperparameters 的效果。新的 CLI 選項也能設定首次 run：
+
+```powershell
+& '.\.venv\Scripts\python.exe' gpu_training_demo.py --keep-open --learning-rate 0.03 --momentum 0.6 --weight-decay 0.001 --steps 1000
+```
+
 正常完成或按網頁的`Stop`後，範例會自動把模型、optimizer、下一步編號和隨機數狀態存到與 CSV 同名的 `.pt` 檔案。終端機會印出 `Checkpoint:` 路徑。
 
 網頁另提供`Save Checkpoint`，在下一個步驟邊界建立新的 `.pt`，並顯示完整路徑。暫停時也能保存。輸入未來的已完成步數並按`Schedule Checkpoint`，會在該步完成後保存一次；可取消或改成另一個步數。同時只保留一個預訂，提前停止後不再等待未來的預訂。這些保存檔同樣能用 `--resume` 接續。
