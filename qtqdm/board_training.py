@@ -9,8 +9,9 @@ from .chart_history import history_page
 
 
 class TrainingBridge:
-    def __init__(self, runner):
+    def __init__(self, runner, records=None):
         self.runner = runner
+        self.records = records
         self._lock = Lock()
         self._closed = Event()
         self._thread = None
@@ -20,6 +21,7 @@ class TrainingBridge:
         self._error = None
         self._history = {}
         self._history_cursor = 0
+        self._history_error = None
 
     def history_since(self, job_id, after=0):
         process = self.runner.snapshot()
@@ -38,7 +40,7 @@ class TrainingBridge:
                 return {"data": None, "connected": False, "error": None}
             fresh = self._sampled_at is not None and time() - self._sampled_at <= 3
             return {"data": self._data, "connected": bool(process["running"] and fresh and not self._error),
-                    "sampled_at": self._sampled_at, "error": self._error}
+                    "sampled_at": self._sampled_at, "error": self._error, "history_error": self._history_error}
 
     def _poll(self):
         while not self._closed.is_set():
@@ -50,26 +52,12 @@ class TrainingBridge:
                     self._data = self._sampled_at = self._error = None
                     self._history = {}
                     self._history_cursor = 0
+                    self._history_error = None
             if process["running"] and process["dashboard_url"]:
                 try:
                     with urlopen(process["dashboard_url"] + "state", timeout=1) as response:
                         data = json.load(response)
                     data.pop("console", None)  # Board already owns the complete process console.
-                    # Fetch only new points. Keep them in Board after the child exits.
-                    for _ in range(4):
-                        if self._history_cursor >= data.get("history_updates", 0) or self._closed.is_set():
-                            break
-                        with urlopen(process["dashboard_url"] + f"history?after={self._history_cursor}", timeout=1) as response:
-                            page = json.load(response)
-                        if self.runner.snapshot()["job_id"] != job_id:
-                            break
-                        with self._lock:
-                            for name, points in page["charts"].items():
-                                self._history.setdefault(name, []).extend(points)
-                            previous = self._history_cursor
-                            self._history_cursor = page["next_update"]
-                        if self._history_cursor <= previous:
-                            break
                     error = None
                 except (OSError, URLError, ValueError) as exception:
                     data, error = None, str(exception)
@@ -79,6 +67,33 @@ class TrainingBridge:
                         self._error = error
                         if data is not None:
                             self._data, self._sampled_at = data, time()
+                    if data is not None and self.records and process.get("record_id"):
+                        self.records.training(process["record_id"], data)
+                if data is not None and current["job_id"] == job_id:
+                    history_error = None
+                    try:
+                        # Fetch only new points. Keep them in Board after the child exits.
+                        for _ in range(4):
+                            if self._history_cursor >= data.get("history_updates", 0) or self._closed.is_set():
+                                break
+                            with urlopen(process["dashboard_url"] + f"history?after={self._history_cursor}", timeout=1) as response:
+                                page = json.load(response)
+                            if self.runner.snapshot()["job_id"] != job_id:
+                                break
+                            if self.records and process.get("record_id"):
+                                self.records.training(process["record_id"], data, page)
+                            with self._lock:
+                                for name, points in page["charts"].items():
+                                    self._history.setdefault(name, []).extend(points)
+                                previous = self._history_cursor
+                                self._history_cursor = page["next_update"]
+                            if self._history_cursor <= previous:
+                                break
+                    except (OSError, URLError, ValueError) as exception:
+                        history_error = str(exception)
+                    with self._lock:
+                        if self._job_id == job_id:
+                            self._history_error = history_error
             self._closed.wait(0.25)
 
     def control(self, command):
@@ -97,4 +112,5 @@ class TrainingBridge:
     def close(self):
         self._closed.set()
         if self._thread is not None:
-            self._thread.join(timeout=2)
+            # RunRecords must stay open until this writer has finished.
+            self._thread.join()

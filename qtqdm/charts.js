@@ -1,4 +1,13 @@
 // Each chart owns its settings. Changing a chart never sends training commands.
+function smoothChartPoints(points, weight) {
+  if (!weight || !points.length) return points;
+  let value = points[0][1];
+  return points.map(point => {
+    value = weight * value + (1 - weight) * point[1];
+    return [point[0], value, ...point.slice(2)];
+  });
+}
+
 function createChart(containerId, historyKind, settingsContainerId = null) {
   const container = document.getElementById(containerId);
   container.innerHTML = `
@@ -13,7 +22,10 @@ function createChart(containerId, historyKind, settingsContainerId = null) {
         <label>Min <input name="ymin" type="number" step="any" placeholder="Auto"></label>
         <label>Max <input name="ymax" type="number" step="any" placeholder="Auto"></label>
       </div>
-      <div class="axis-row"><button type="submit">Apply Axes</button><button type="button" class="chart-reset">Reset Axes</button></div>
+      <div class="axis-row">
+        <label>Smoothing <select name="smoothing"><option value="0">None (Raw)</option><option value="0.6">EMA 0.6</option><option value="0.9">EMA 0.9</option><option value="0.99">EMA 0.99</option></select></label>
+        <button type="submit">Apply Axes</button><button type="button" class="chart-reset">Reset Axes</button>
+      </div>
       <p class="chart-error" role="status"></p>
     </form>
     <canvas class="chart-canvas" role="img"></canvas>
@@ -26,10 +38,10 @@ function createChart(containerId, historyKind, settingsContainerId = null) {
   const error = form.querySelector(".chart-error");
   const caption = container.querySelector(".chart-caption");
   let histories = {};
-  let settings = {x: 2, y: null, xmin: null, xmax: null, ymin: null, ymax: null};
+  let settings = {x: 2, y: null, xmin: null, xmax: null, ymin: null, ymax: null, smoothing: 0};
 
   function applySettings() {
-    const next = {x: Number(field("x").value), y: field("y").value};
+    const next = {x: Number(field("x").value), y: field("y").value, smoothing: Number(field("smoothing").value)};
     for (const name of ["xmin", "xmax", "ymin", "ymax"]) {
       next[name] = field(name).value.trim() === "" ? null : Number(field(name).value);
       if (next[name] != null && !Number.isFinite(next[name])) {
@@ -49,6 +61,7 @@ function createChart(containerId, historyKind, settingsContainerId = null) {
   }
 
   form.onsubmit = event => { event.preventDefault(); applySettings(); };
+  field("smoothing").onchange = applySettings;
   field("x").onchange = () => {
     field("xmin").value = field("xmax").value = "";
     applySettings();
@@ -101,7 +114,8 @@ function createChart(containerId, historyKind, settingsContainerId = null) {
     const ctx = canvas.getContext("2d");
     ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
     ctx.clearRect(0, 0, width, height);
-    const points = histories[settings.y]?.[historyKind] || [];
+    const rawPoints = histories[settings.y]?.[historyKind] || [];
+    const points = smoothChartPoints(rawPoints, settings.smoothing);
     const xName = {0: "Elapsed Time (s)", 2: "Step", 3: "Update Index"}[settings.x];
     canvas.setAttribute("aria-label", `${settings.y || "Metric"} chart; X Axis: ${xName}`);
     if (!points.length) { caption.textContent = "Waiting for numeric metrics."; return; }
@@ -167,6 +181,7 @@ function createChart(containerId, historyKind, settingsContainerId = null) {
     caption.textContent = `X: ${numberLabel(xmin, xInterval)} – ${numberLabel(xmax, xInterval)}; Y: ${numberLabel(ymin, yInterval)} – ${numberLabel(ymax, yInterval)}` +
       (visible.length ? "" : "; No samples in this X range.") +
       (historyKind === "overview" ? " | Downsampled training history." : " | Full metric history; no rolling window.") +
+      (settings.smoothing ? ` EMA ${settings.smoothing}; raw data retained.` : " Raw data.") +
       ` Samples: ${numberLabel(sampleMin, xInterval)} – ${numberLabel(sampleMax, xInterval)} (${points.length} points).`;
   }
 

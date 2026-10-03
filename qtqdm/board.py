@@ -14,15 +14,19 @@ from .board_dialog import NativePicker
 from .board_process import ProcessRunner
 from .board_monitor import ResourceMonitor
 from .board_training import TrainingBridge
+from .board_records import RunRecords
+from .board_viewers import BoardViewers
 
 
 class TqdmBoard:
-    def __init__(self, directory=None, port=0):
+    def __init__(self, directory=None, port=0, records_path=None):
         self.project_root = Path(__file__).resolve().parent.parent
         self.directory = Path(directory or self.project_root).resolve(strict=True)
-        self.runner = ProcessRunner(self.project_root)
+        self.records = RunRecords(records_path or self.project_root / "runs" / "tqdmboard" / "records.sqlite3")
+        self.viewers = BoardViewers()
+        self.runner = ProcessRunner(self.project_root, self.records)
         self.monitor = ResourceMonitor()
-        self.training = TrainingBridge(self.runner)
+        self.training = TrainingBridge(self.runner, self.records)
         self.picker = NativePicker(self.directory)
         self.closed = Event()
         self.server = None
@@ -77,6 +81,13 @@ class TqdmBoard:
                         query = parse_qs(route.query)
                         self.respond_json(board.training.history_since(int(query.get("job_id", ["-1"])[0]),
                                                                       int(query.get("after", ["0"])[0])))
+                    elif route.path == "/records":
+                        self.respond_json(board.records.list())
+                    elif route.path in ("/record", "/record-history"):
+                        query = parse_qs(route.query)
+                        record_id = query.get("id", [""])[0]
+                        self.respond_json(board.records.get(record_id) if route.path == "/record" else
+                                          board.records.history(record_id, int(query.get("after", ["0"])[0])))
                     else:
                         self.send_error(404)
                 except (OSError, ValueError) as error:
@@ -99,7 +110,9 @@ class TqdmBoard:
                     data = json.loads(self.rfile.read(length))
                     if not isinstance(data, dict):
                         raise ValueError("Expected a JSON object")
-                    if self.path == "/select-path":
+                    if self.path == "/viewer":
+                        board.viewers.update(data.get("id"), data.get("closed") is True, data.get("sequence"))
+                    elif self.path == "/select-path":
                         path = board.picker.pick(data.get("kind"), data.get("initial"))
                         result = {"path": path}
                         if path and data["kind"] == "script":
@@ -136,8 +149,14 @@ class TqdmBoard:
         self.monitor.start()
         self.training.start()
         Thread(target=self.server.serve_forever, daemon=True).start()
+        Thread(target=self._watch_viewers, daemon=True).start()
         print(f"tqdmboard: {self.url}", flush=True)
         return self.url
+
+    def _watch_viewers(self):
+        while not self.closed.wait(0.25):
+            if self.viewers.should_close():
+                self.closed.set()
 
     def close(self):
         self.closed.set()
@@ -145,6 +164,7 @@ class TqdmBoard:
             self.runner.close()
         finally:
             self.training.close()
+            self.records.close()
             self.monitor.close()
             self.picker.close()
             if self.server is not None:
@@ -158,8 +178,9 @@ def main():
     parser.add_argument("--directory", type=Path)
     parser.add_argument("--port", type=int, default=0)
     parser.add_argument("--no-browser", action="store_true")
+    parser.add_argument("--records-path", type=Path, help="Run history database location")
     args = parser.parse_args()
-    board = TqdmBoard(args.directory, args.port)
+    board = TqdmBoard(args.directory, args.port, args.records_path)
     try:
         url = board.start()
         if not args.no_browser:

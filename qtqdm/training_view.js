@@ -59,9 +59,9 @@ function createTrainingView({prefix = "", send, settingsContainer = null, readHi
     commandBusy = true;
     updateControls();
     try {
-      await send(action, value);
+      const result = await send(action, value);
       if (requestGeneration !== generation) return;
-      pendingCommand = {action, value};
+      pendingCommand = {action, value, saveRequestId: result?.save_request_id};
       byId("control-message").textContent = "Command accepted; pending step boundary.";
     } catch (error) {
       if (requestGeneration === generation) byId("control-message").textContent = error.message;
@@ -97,7 +97,7 @@ function createTrainingView({prefix = "", send, settingsContainer = null, readHi
   };
   updateControls();
 
-  function update(data, online) {
+  function update(data, online, historyError = null, archived = false) {
     connected = online;
     if (!data) { updateControls(); return; }
     controlState = data.control;
@@ -107,12 +107,14 @@ function createTrainingView({prefix = "", send, settingsContainer = null, readHi
         (pendingCommand.action === "pause" && controlState.paused) ||
         (pendingCommand.action === "resume" && !controlState.pause_requested && !controlState.paused) ||
         (pendingCommand.action === "learning_rate" && controlState.pending_learning_rate == null && (controlState.learning_rate === pendingCommand.value || controlState.learning_rate_error)) ||
-        (pendingCommand.action === "save" && !controlState.save_requested && !controlState.saving && (controlState.last_checkpoint || controlState.save_error)) ||
+        (pendingCommand.action === "save" && pendingCommand.saveRequestId != null && controlState.save_completed_id >= pendingCommand.saveRequestId) ||
         (pendingCommand.action === "schedule_save" && (controlState.save_at_step === pendingCommand.value || controlState.completed >= pendingCommand.value)) ||
         (pendingCommand.action === "cancel_save" && controlState.save_at_step == null);
       if (done) {
         const messages = {pause: "Paused.", resume: "Resumed.", stop: "Stopped.", learning_rate: controlState.learning_rate_error ? `Learning rate failed: ${controlState.learning_rate_error}` : "Learning rate applied.", save: controlState.save_error ? "Checkpoint failed." : "Checkpoint saved.", schedule_save: "Checkpoint scheduled.", cancel_save: "Checkpoint schedule canceled."};
-        byId("control-message").textContent = pendingCommand.action === "save" ? messages.save : controlState.finished ? "Run ended." : messages[pendingCommand.action];
+        const saveCompleted = pendingCommand.saveRequestId != null && controlState.save_completed_id >= pendingCommand.saveRequestId;
+        byId("control-message").textContent = pendingCommand.action === "save" ?
+          (saveCompleted ? messages.save : "Run ended before checkpoint completed.") : controlState.finished ? "Run ended." : messages[pendingCommand.action];
         pendingCommand = null;
       }
     }
@@ -163,7 +165,8 @@ function createTrainingView({prefix = "", send, settingsContainer = null, readHi
     overviewChart.update(data.charts);
     recentChart.update(fullHistories);
     loadHistory(data.history_updates || 0);
-    if (data.state === "failed" && !errorShown) {
+    if (historyError) recentChart.setStatus(`History temporarily unavailable: ${historyError}. Retrying...`);
+    if (data.state === "failed" && !errorShown && !archived) {
       errorShown = true;
       alert(data.error || "The task failed.");
     }

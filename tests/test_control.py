@@ -19,6 +19,24 @@ def wait_until(predicate):
 
 
 class ControlTests(unittest.TestCase):
+    def test_save_ids_do_not_confuse_repeated_paths_or_failed_attempts(self):
+        control = TrainingControl()
+        control.register_controls(save_checkpoint=lambda: 'same.pt')
+        for ticket in (1, 2):
+            control.request('save')
+            self.assertEqual(control.snapshot()['save_request_id'], ticket)
+            self.assertEqual(control.snapshot()['save_completed_id'], ticket - 1)
+            control.checkpoint()
+            self.assertEqual(control.snapshot()['save_completed_id'], ticket)
+        def fail():
+            raise OSError('disk full')
+        control.register_controls(save_checkpoint=fail)
+        control.request('save')
+        control.checkpoint()
+        self.assertEqual(control.snapshot()['save_completed_id'], 3)
+        self.assertEqual(control.snapshot()['last_checkpoint'], 'same.pt')
+        self.assertIn('disk full', control.snapshot()['save_error'])
+
     def test_save_runs_on_paused_training_thread(self):
         control = TrainingControl()
         calls = []

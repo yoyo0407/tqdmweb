@@ -13,6 +13,7 @@
     h2 { font-size: 1.15rem; }
     summary { cursor: pointer; font-weight: 600; padding: 12px 0; }
     .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    #record-list { max-width: 100%; min-width: 0; }
     .hint { font-size: 0.85rem; color: #59636e; overflow-wrap: anywhere; }
     #console-output { max-height: 280px; min-height: 100px; overflow: auto; border: 1px solid #b8c2cc; padding: 12px; font: 13px/1.5 monospace; white-space: pre; }
     #message, #process-status { min-height: 1.2em; overflow-wrap: anywhere; }
@@ -46,6 +47,17 @@
     </form>
     <p id="message" role="status"></p>
     <p id="process-status" role="status"></p>
+    <section>
+      <h2>Run History</h2>
+      <div class="controls">
+        <select id="record-list" aria-label="Run History"><option value="">Select a run...</option></select>
+        <button id="view-record" type="button">View Record</button>
+        <button id="live-view" type="button">Live View</button>
+        <button id="refresh-records" type="button">Refresh Records</button>
+      </div>
+      <p id="record-status" class="hint" role="status">Live View</p>
+      <pre id="record-config" class="hint" style="white-space: pre-wrap" hidden></pre>
+    </section>
     <section>
       <h2>Process Console</h2>
       <div class="controls">

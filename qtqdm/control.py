@@ -20,6 +20,8 @@ class TrainingControl:
         self._saving = False
         self._last_checkpoint = None
         self._save_error = None
+        self._save_request_id = 0
+        self._save_completed_id = 0
         self._save_at_step = None
         self._completed = 0
         self._total = None
@@ -52,6 +54,7 @@ class TrainingControl:
                 if self._save_requested or self._saving:
                     return False
                 self._save_requested = True
+                self._save_request_id += 1
                 self._save_error = None
             elif action == "schedule_save":
                 if self._save_handler is None:
@@ -106,6 +109,7 @@ class TrainingControl:
                     return False
                 if self._save_at_step is not None and self._completed >= self._save_at_step:
                     self._save_requested = True
+                    self._save_request_id += 1
                     self._save_at_step = None
                 if self._pending_learning_rate is not None and not self._stop_requested:
                     rate = self._pending_learning_rate
@@ -118,6 +122,7 @@ class TrainingControl:
                     self._save_error = None
                     handler = self._save_handler
                     operation = "save"
+                    save_request_id = self._save_request_id
                 elif final or self._stop_requested or not self._pause_requested:
                     self._paused = False
                     if final:
@@ -153,6 +158,7 @@ class TrainingControl:
                 with self._condition:
                     if operation == "save":
                         self._saving = False
+                        self._save_completed_id = save_request_id
                     self._condition.notify_all()
 
     def finish(self):
@@ -181,6 +187,8 @@ class TrainingControl:
                 "saving": self._saving,
                 "last_checkpoint": self._last_checkpoint,
                 "save_error": self._save_error,
+                "save_request_id": self._save_request_id,
+                "save_completed_id": self._save_completed_id,
                 "save_at_step": self._save_at_step,
                 "completed": self._completed,
                 "total": self._total,

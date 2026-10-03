@@ -17,8 +17,10 @@ from .console import ConsoleOutput
 
 
 class ProcessRunner:
-    def __init__(self, project_root):
+    def __init__(self, project_root, records=None):
         self.project_root = Path(project_root).resolve()
+        self.records = records
+        self.record_id = None
         self._lock = Lock()
         self._process = None
         self._pending = None
@@ -43,17 +45,24 @@ class ProcessRunner:
         environment["PYTHONUNBUFFERED"] = "1"
         environment["PYTHONPATH"] = str(self.project_root) + os.pathsep + environment.get("PYTHONPATH", "")
         command = [config["python"], "-u", config["script"], *config["argv"]]
+        record_id = self.records.start(config, log_path) if self.records else None
+        if self.records:
+            environment['TQDMBOARD_RECORD_ID'] = record_id
+            environment['TQDMBOARD_RECORDS_PATH'] = str(self.records.path.resolve())
         try:
             process = subprocess.Popen(command, cwd=config["working_directory"], env=environment,
                                        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
         except OSError:
             output.close()
+            if self.records:
+                self.records.finish(record_id, "failed", None)
             raise
         self.job_id += 1
         self._process = process
         self.console = output
         self.config = config
+        self.record_id = record_id
         self.state = "running"
         self.exit_code = None
         self.dashboard_url = None
@@ -169,6 +178,8 @@ class ProcessRunner:
                 return
             self.exit_code = code
             self.state = "exited" if code == 0 else "failed"
+            if self.records:
+                self.records.finish(self.record_id, self.state, code)
             self.error = None
             if self._pending is not None and not self._closing:
                 config = self._pending
@@ -182,7 +193,7 @@ class ProcessRunner:
     def snapshot(self):
         with self._lock:
             alive = self._process is not None and self._process.poll() is None
-            return {"job_id": self.job_id, "state": self.state, "running": alive,
+            return {"job_id": self.job_id, "record_id": self.record_id, "state": self.state, "running": alive,
                     "pid": self._process.pid if self._process is not None else None,
                     "exit_code": self.exit_code, "restart_pending": self._pending is not None,
                     "dashboard_url": self.dashboard_url, "config": self.config,

@@ -70,6 +70,18 @@ class TrainingBridgeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.bridge.control({"job_id": 1, "action": "stop"})
 
+    def test_history_failure_keeps_state_and_controls_connected_then_retries(self):
+        self.data['history_updates'] = 1
+        self.bridge.start()
+        wait_until(lambda: self.snapshot().get('history_error') is not None)
+        self.assertTrue(self.snapshot()['connected'])
+        self.assertIsNone(self.snapshot()['error'])
+        self.assertEqual(self.bridge.control({'job_id': 1, 'action': 'pause'})[1], 200)
+        self.dashboard.get_history = lambda after, limit: {'charts': {'loss': [[0.1, 2, 1, 1]]}, 'next_update': 1, 'has_more': False}
+        wait_until(lambda: self.bridge._history_cursor == 1)
+        self.assertIsNone(self.snapshot()['history_error'])
+        self.assertEqual(self.bridge.history_since(1)['charts']['loss'][0][3], 1)
+
     def test_slow_old_response_does_not_block_state_or_enter_new_job(self):
         entered, release = Event(), Event()
         class Response:

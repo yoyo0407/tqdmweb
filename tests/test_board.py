@@ -75,7 +75,7 @@ class BoardTests(unittest.TestCase):
     def test_app_stays_alive_after_script_exit_and_rejects_foreign_origin(self):
         script = self.root / "example.py"
         script.write_text("print('completed')\n", encoding="utf-8")
-        board = TqdmBoard(self.root)
+        board = TqdmBoard(self.root, records_path=self.root / 'records.sqlite3')
         board.runner.project_root = self.root
         self.addCleanup(board.close)
         url = board.start()
@@ -96,7 +96,7 @@ class BoardTests(unittest.TestCase):
     def test_native_script_selection_and_cancel_through_http(self):
         script = self.root / "測試 script.py"
         script.write_text("print('selected')", encoding="utf-8")
-        board = TqdmBoard(self.root)
+        board = TqdmBoard(self.root, records_path=self.root / 'records.sqlite3')
         self.addCleanup(board.close)
         url = board.start()
         def select():

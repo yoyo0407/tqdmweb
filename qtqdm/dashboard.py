@@ -90,7 +90,10 @@ class Dashboard:
                 if not accepted:
                     self.respond_json({"error": "Command unavailable: task ended, stopping, or save already pending"}, 409)
                     return
-                self.respond_json({"accepted": True})
+                result = {"accepted": True}
+                if command.get("action") == "save":
+                    result["save_request_id"] = dashboard.get_state().get("control", {}).get("save_request_id")
+                self.respond_json(result)
 
             def log_message(self, format, *args):
                 pass

@@ -4,10 +4,12 @@ from time import monotonic
 import webbrowser
 import traceback as traceback_module
 import os
+import sqlite3
 
 from .progress import Progress
 from .console import ConsoleCapture, ConsoleOutput
 from .dashboard import Dashboard
+from .board_records import archive_progress
 
 
 class Qtqdm(Progress):
@@ -22,6 +24,16 @@ class Qtqdm(Progress):
         self._dashboard = Dashboard(self.snapshot, self.control.request, self.history_since)
         self.console = ConsoleOutput(console_path)
         self._console_capture = ConsoleCapture(self.console) if capture_console else None
+        self._archived = False
+
+    def _archive_result(self):
+        if self._archived:
+            return
+        try:
+            archive_progress(self)
+            self._archived = True
+        except (OSError, ValueError, sqlite3.Error) as error:
+            print(f'Run record could not be finalized: {error}', flush=True)
 
     def snapshot(self):
         state = super().snapshot()
@@ -76,6 +88,7 @@ class Qtqdm(Progress):
         if self._console_capture is not None:
             self._console_capture.stop()
         self.console.close()
+        self._archive_result()
         return False
 
     def close(self):
@@ -84,6 +97,7 @@ class Qtqdm(Progress):
         self.console.close()
         self.control.finish()
         self._close_log()
+        self._archive_result()
         self._dashboard.close()
 
     def wait(self):
